@@ -78,8 +78,8 @@ const TypewriterProfile = ({ text }: { text: string }) => {
   const segments = profileWithHighlights(displayed);
 
   return (
-    <div ref={ref} className="profile-typewriter min-h-[15.5rem] md:min-h-[16rem] text-base md:text-[1.05rem] leading-[1.75]">
-      <span>
+    <div ref={ref} className="profile-typewriter min-h-[12rem] sm:min-h-[14rem] md:min-h-[16rem] text-sm sm:text-base md:text-[1.05rem] leading-[1.75] min-w-0 overflow-hidden break-words">
+      <span className="break-words">
         {segments.map((seg, i) =>
           typeof seg === 'string' ? (
             <span key={`t-${i}`} data-profile-segment="normal">{seg}</span>
@@ -126,8 +126,8 @@ const heroChipsWrap = { ...fadeIn, transition: { duration: 0.3, delay: 0.52, eas
 const heroCTAs = { ...fadeIn, transition: { duration: 0.3, delay: 0.68, ease: 'easeOut' } };
 
 
-/** Content width — wide enough for asymmetrical composition */
-const CONTENT_MAX = 'max-w-5xl mx-auto w-full px-6';
+/** Content width — wide enough for asymmetrical composition; min-w-0 + overflow prevents horizontal scroll on resize/mobile */
+const CONTENT_MAX = 'max-w-5xl mx-auto w-full min-w-0 px-4 sm:px-6 overflow-x-hidden';
 
 /** Vertical rhythm: more breathing room between major sections */
 const SECTION_SPACE = 'mb-20 md:mb-28';
@@ -376,7 +376,7 @@ const About = () => {
   );
 
   return (
-    <div className="min-h-screen pt-20 relative">
+    <div className="min-h-screen pt-20 relative overflow-x-hidden">
       <InteractiveBackground variant="grid" intensity="subtle" />
       <Section id="about" title="About Me">
         <div className={CONTENT_MAX}>
@@ -619,7 +619,7 @@ const About = () => {
 
           {/* —— 3. Core strengths: strict grid — top row LEFT = graph, RIGHT = detail; bottom row 6 cards —— */}
           <motion.div
-            className={`rounded-xl border border-primary/30 bg-black/30 p-4 md:p-5 w-full max-w-5xl mx-auto overflow-hidden ${SECTION_SPACE}`}
+            className={`rounded-xl border border-primary/30 bg-black/30 p-4 md:p-5 w-full max-w-5xl mx-auto min-w-0 overflow-hidden ${SECTION_SPACE}`}
             initial="initial"
             whileInView="animate"
             viewport={{ once: true, margin: '-60px' }}
@@ -631,15 +631,15 @@ const About = () => {
               ref={radarRef}
               className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] gap-4 md:gap-6 mb-4 w-full min-w-0 items-stretch"
             >
-              {/* Left column: radar graph — no internal padding, center 120, larger radius */}
+              {/* Left column: radar graph — responsive max-width so it doesn't overflow on small screens */}
               <motion.div
-                className="min-w-0 self-start justify-self-start w-full"
+                className="min-w-0 self-start justify-self-start w-full max-w-full"
                 initial={{ opacity: 0, scale: 0.92 }}
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4, ease: 'easeOut' }}
               >
-                <div className="w-full max-w-[480px] aspect-square overflow-visible">
+                <div className="w-full max-w-[280px] sm:max-w-[360px] md:max-w-[480px] aspect-square overflow-visible mx-auto md:mx-0">
                   <svg viewBox="-15 -15 270 270" className="w-full h-full block overflow-visible" aria-hidden>
                     <defs>
                       <linearGradient id="radar-fill" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -830,14 +830,15 @@ const About = () => {
                   </svg>
                 </div>
               </motion.div>
-              {/* Right column: detail scrolls in flex-1; cockpit strip fixed at bottom (static above cards), no interaction with detail */}
+              {/* Right column: detail in fixed-height box so switching highlights doesn't resize or shift content below */}
               <motion.div
-                className="min-w-0 min-h-0 flex flex-col w-full"
+                className="min-w-0 flex flex-col w-full"
                 initial={false}
                 animate={{ opacity: hoveredStrength !== null ? 1 : 0.95 }}
                 transition={{ duration: 0.2 }}
               >
-                <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-primary/25 bg-black/40 p-4">
+                {/* Fixed height fits longest detail (3 bullets); no scrollbar — content swaps in place */}
+                <div className="h-[12rem] sm:h-[13rem] md:h-[14rem] shrink-0 overflow-hidden rounded-lg border border-primary/25 bg-black/40 p-4 flex flex-col">
                   <h4 className="text-xs font-mono text-primary/70 uppercase tracking-wider mb-2 shrink-0">
                     {hoveredStrength !== null ? CORE_STRENGTHS[hoveredStrength].label : 'Detail'}
                   </h4>
@@ -851,12 +852,12 @@ const About = () => {
                       ))}
                     </ul>
                   ) : (
-                    <p className="text-gray-400 text-sm min-w-0">Hover a category to see skills & experience.</p>
+                    <p className="text-gray-400 text-sm min-w-0">Hover or tap a category below to see skills & experience.</p>
                   )}
                 </div>
-                {/* Cockpit strip: left = racing logs + one graph + lights; right = readouts + lights (balanced) */}
+                {/* Cockpit strip: shorter on mobile to avoid dominating; responsive height */}
                 <div
-                  className="flex-shrink-0 h-[140px] mt-3 rounded-lg border border-primary/20 bg-black/50 overflow-hidden font-mono text-[10px] relative flex"
+                  className="flex-shrink-0 h-[90px] sm:h-[120px] md:h-[140px] mt-3 rounded-lg border border-primary/20 bg-black/50 overflow-hidden font-mono text-[10px] relative flex min-w-0"
                   aria-hidden
                 >
                   {/* Left: Sys/LOG header + racing logs + single bar graph */}
@@ -893,8 +894,8 @@ const About = () => {
                       <span className="text-primary/40 text-[8px] ml-1 uppercase">lvl</span>
                     </div>
                   </div>
-                  {/* Right: STAT/IO readouts + blinking LEDs + fake digits */}
-                  <div className="w-[48%] min-w-[120px] flex flex-col p-2 gap-2 border-l border-primary/10">
+                  {/* Right: STAT/IO readouts + blinking LEDs; flexible width, min-w-0 so it can shrink on narrow */}
+                  <div className="w-[48%] min-w-0 flex flex-col p-2 gap-2 border-l border-primary/10 shrink-0 max-w-[140px]">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-primary/50 uppercase tracking-wider text-[9px]">Stat</span>
                       <div className="flex gap-1">
@@ -916,25 +917,30 @@ const About = () => {
                 </div>
               </motion.div>
             </div>
-            {/* Bottom row: 6 cards in one row on desktop */}
+            {/* Bottom row: 6 cards; 2 cols mobile, 3 sm, 6 md+; overflow-safe text */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 w-full min-w-0">
               {CORE_STRENGTHS.map((group, idx) => (
                 <motion.div
                   key={group.label}
+                  role="button"
+                  tabIndex={0}
                   variants={fadeIn}
                   onMouseEnter={() => setHoveredStrength(idx)}
                   onMouseLeave={() => setHoveredStrength(null)}
+                  onClick={() => setHoveredStrength((prev) => (prev === idx ? null : idx))}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setHoveredStrength((prev) => (prev === idx ? null : idx)); } }}
                   whileHover={{ y: -2, transition: { duration: 0.2 } }}
-                  className={`min-w-0 min-h-[78px] md:min-h-[84px] attention-strength-${idx} rounded-lg border p-3 pl-3 border-l-2 cursor-pointer transition-all duration-200 ${hoveredStrength === idx ? 'border-primary/70 border-l-primary ring-2 ring-primary/60 bg-black/50 shadow-[0_0_20px_rgba(240,126,65,0.18)]' : 'border-primary/25 border-l-primary/60 bg-black/40 hover:border-primary/40 hover:border-l-primary hover:shadow-[0_0_12px_rgba(240,126,65,0.08)]'}`}
+                  whileTap={{ scale: 0.98 }}
+                  className={`min-w-0 min-h-[72px] sm:min-h-[78px] md:min-h-[84px] attention-strength-${idx} rounded-lg border p-2 sm:p-3 pl-2 sm:pl-3 border-l-2 cursor-pointer transition-all duration-200 overflow-hidden ${hoveredStrength === idx ? 'border-primary/70 border-l-primary ring-2 ring-primary/60 bg-black/50 shadow-[0_0_20px_rgba(240,126,65,0.18)]' : 'border-primary/25 border-l-primary/60 bg-black/40 hover:border-primary/40 hover:border-l-primary hover:shadow-[0_0_12px_rgba(240,126,65,0.08)]'}`}
                 >
-                  <h4 className="text-xs font-cyber text-primary uppercase tracking-wider mb-1.5">
+                  <h4 className="text-[10px] sm:text-xs font-cyber text-primary uppercase tracking-wider mb-1 sm:mb-1.5 truncate">
                     {group.label}
                   </h4>
-                  <ul className="space-y-0.5 text-gray-300 text-xs leading-snug">
+                  <ul className="space-y-0.5 text-gray-300 text-[10px] sm:text-xs leading-snug break-words overflow-hidden">
                     {group.teaser.map((item) => (
-                      <li key={item} className="flex items-start gap-1">
+                      <li key={item} className="flex items-start gap-1 min-w-0">
                         <span className="text-primary/50 shrink-0">·</span>
-                        <span>{item}</span>
+                        <span className="break-words">{item}</span>
                       </li>
                     ))}
                   </ul>
@@ -945,14 +951,14 @@ const About = () => {
 
           {/* —— 4. Profile (typewriter when in view) —— */}
           <motion.div
-            className={`profile-panel-breathe rounded-lg border border-primary/20 bg-black/30 p-6 ${SECTION_SPACE}`}
+            className={`profile-panel-breathe rounded-lg border border-primary/20 bg-black/30 p-4 sm:p-6 min-w-0 overflow-hidden ${SECTION_SPACE}`}
             initial={{ opacity: 0, y: 10 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
             <SectionLabel label="Profile" className="mb-4" />
-            <div className="max-w-2xl">
+            <div className="max-w-2xl min-w-0 w-full">
               <TypewriterProfile text={ABOUT_SUMMARY} />
             </div>
           </motion.div>

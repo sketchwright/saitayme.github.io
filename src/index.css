@@ -328,6 +328,23 @@ div.profile-typewriter span.profile-highlight {
   animation: project-card-idle-emphasis 2.2s ease-in-out 1;
 }
 
+/* Hide scrollbar but keep scroll behavior (carousels, etc.) */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Home: Impact strip segment scan sweep */
+@keyframes impact-scan-sweep {
+  0% { transform: translateY(-100%); opacity: 0; }
+  15% { opacity: 0.8; }
+  85% { opacity: 0.8; }
+  100% { transform: translateY(400%); opacity: 0; }
+}
+
 /* Projects: thumbnail scan sweep (once on hover) */
 @keyframes project-thumb-sweep {
   0% { transform: translateX(-100%); opacity: 0.5; }

@@ -1,7 +1,12 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { FaGamepad, FaTools } from 'react-icons/fa';
 import AnimatedGrid from '@/components/AnimatedGrid';
+import ImpactStrip from '@/components/ImpactStrip';
+import ProjectCarousel from '@/components/ProjectCarousel';
+import QuoteWall from '@/components/QuoteWall';
+import SkillAuthorityGrid from '@/components/SkillAuthorityGrid';
+import TutorialCarousel from '@/components/TutorialCarousel';
+import ContactCTA from '@/components/ContactCTA';
 import React from 'react';
 
 interface HomeProps {
@@ -366,46 +371,27 @@ const Home = ({ onPlayGame }: HomeProps) => {
         </div>
       </motion.section>
 
-      {/* Features Section */}
-      <section className="py-20 bg-cyber-dark relative overflow-hidden">
-        <div className="cyber-container relative z-10">
-          <div className="grid md:grid-cols-2 gap-12">
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6 }}
-              className="cyber-card group"
-            >
-              <FaGamepad className="text-4xl text-primary mb-4 neon-flicker" />
-              <h2 className="text-2xl font-cyber text-white mb-4 group-hover:text-primary group-hover:neon-text transition-all">
-                Gameplay Programming
-              </h2>
-              <p className="text-gray-400 font-mono">
-                Specializing in combat systems, procedural generation, and AI behavior
-                implementation for engaging player experiences.
-              </p>
-            </motion.div>
+      {/* Impact Strip — instant credibility proof */}
+      <ImpactStrip />
 
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.6, delay: 0.2 }}
-              className="cyber-card group"
-            >
-              <FaTools className="text-4xl text-primary mb-4 neon-flicker" />
-              <h2 className="text-2xl font-cyber text-white mb-4 group-hover:text-primary group-hover:neon-text transition-all">
-                Engine Tools
-              </h2>
-              <p className="text-gray-400 font-mono">
-                Building efficient tools and frameworks for scene management, audio systems,
-                and custom editor extensions.
-              </p>
-            </motion.div>
-          </div>
-        </div>
+      {/* Featured Project Carousel */}
+      <section className="bg-cyber-dark/50">
+        <ProjectCarousel />
       </section>
+
+      {/* Recommendations / Quotes */}
+      <QuoteWall />
+
+      {/* Technical Authority Grid */}
+      <section className="bg-cyber-dark/30">
+        <SkillAuthorityGrid />
+      </section>
+
+      {/* Modding / Tutorial Media */}
+      <TutorialCarousel />
+
+      {/* Final Contact CTA */}
+      <ContactCTA />
     </div>
   );
 };
