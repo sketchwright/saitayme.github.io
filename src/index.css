@@ -86,6 +86,388 @@
   }
 }
 
+/* About: attention layer — clearly visible, creative, premium */
+:root {
+  --attention-rgb: 240, 126, 65;
+}
+
+/* Ingame Studios: border emphasis only — no bloom (keeps text readable) */
+@keyframes attention-glow-igs {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgba(var(--attention-rgb), 0.4), 0 0 10px rgba(var(--attention-rgb), 0.04);
+  }
+  50% {
+    box-shadow: 0 0 0 2px rgba(var(--attention-rgb), 0.65), 0 0 14px rgba(var(--attention-rgb), 0.06);
+  }
+}
+.attention-igs {
+  animation: attention-glow-igs 4s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+/* CV button: noticeable scale breath + strong glow */
+@keyframes attention-cta {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(var(--attention-rgb), 0);
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  50% {
+    box-shadow: 0 0 28px rgba(var(--attention-rgb), 0.65), 0 0 0 2px rgba(var(--attention-rgb), 0.5);
+    transform: scale(1.04);
+    filter: brightness(1.12);
+  }
+}
+.attention-cta {
+  animation: attention-cta 3.5s ease-in-out infinite;
+  animation-delay: 1.5s;
+  display: inline-block;
+}
+
+/* CV button hover: “win” shimmer + lift — nudges recruiter to click */
+@keyframes cv-cta-shimmer {
+  0% { transform: translateX(-100%) skewX(-12deg); opacity: 0.5; }
+  100% { transform: translateX(200%) skewX(-12deg); opacity: 0; }
+}
+.cv-cta-win {
+  position: relative;
+  overflow: hidden;
+}
+.cv-cta-win::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    transparent 35%,
+    rgba(255, 255, 255, 0.35) 45%,
+    rgba(255, 255, 255, 0.5) 50%,
+    rgba(255, 255, 255, 0.35) 55%,
+    transparent 65%,
+    transparent 100%
+  );
+  pointer-events: none;
+  transform: translateX(-100%);
+  transition: none;
+}
+.cv-cta-win:hover::after {
+  animation: cv-cta-shimmer 0.65s ease-out forwards;
+}
+.cv-cta-win:hover {
+  animation: none;
+  box-shadow: 0 0 36px rgba(var(--attention-rgb), 0.55), 0 6px 20px rgba(0, 0, 0, 0.25);
+  filter: brightness(1.1);
+}
+
+/* BSc badge: visible glow pulse */
+@keyframes attention-badge {
+  0%, 100% {
+    filter: drop-shadow(0 0 8px rgba(var(--attention-rgb), 0.35));
+    text-shadow: 0 0 0 rgba(var(--attention-rgb), 0);
+  }
+  50% {
+    filter: drop-shadow(0 0 18px rgba(var(--attention-rgb), 0.7));
+    text-shadow: 0 0 12px rgba(var(--attention-rgb), 0.4);
+  }
+}
+.attention-badge {
+  animation: attention-badge 5s ease-in-out infinite;
+  animation-delay: 2s;
+}
+
+/* Priority chips: obvious border + glow + background pulse */
+@keyframes attention-chip {
+  0%, 100% {
+    border-color: rgba(var(--attention-rgb), 0.45);
+    box-shadow: 0 0 0 rgba(var(--attention-rgb), 0);
+    background-color: rgba(var(--attention-rgb), 0.12);
+  }
+  50% {
+    border-color: rgba(var(--attention-rgb), 1);
+    box-shadow: 0 0 18px rgba(var(--attention-rgb), 0.35);
+    background-color: rgba(var(--attention-rgb), 0.22);
+  }
+}
+.chip-priority {
+  animation: attention-chip 4s ease-in-out infinite;
+}
+
+/* Profile panel: clear edge breath + outer glow */
+@keyframes attention-panel-breath {
+  0%, 100% {
+    box-shadow: inset 0 0 0 1px rgba(var(--attention-rgb), 0.18);
+  }
+  50% {
+    box-shadow: inset 0 0 0 2px rgba(var(--attention-rgb), 0.4), 0 0 35px rgba(var(--attention-rgb), 0.12);
+  }
+}
+.profile-panel-breathe {
+  animation: attention-panel-breath 6s ease-in-out infinite;
+}
+
+/* Strength cards: one at a time — 6 cards, non-overlapping phases (16% on per card, 18s cycle) */
+@keyframes attention-strength-rotate {
+  0%, 2% {
+    box-shadow: none;
+    border-left-color: rgba(var(--attention-rgb), 0.5);
+  }
+  5%, 21% {
+    box-shadow: 0 0 25px rgba(var(--attention-rgb), 0.28);
+    border-left-color: rgba(var(--attention-rgb), 1);
+  }
+  24%, 100% {
+    box-shadow: none;
+    border-left-color: rgba(var(--attention-rgb), 0.5);
+  }
+}
+.attention-strength-0 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 0s; }
+.attention-strength-1 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 3s; }
+.attention-strength-2 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 6s; }
+.attention-strength-3 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 9s; }
+.attention-strength-4 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 12s; }
+.attention-strength-5 { animation: attention-strength-rotate 18s ease-in-out infinite; animation-delay: 15s; }
+.attention-strength-0:hover,
+.attention-strength-1:hover,
+.attention-strength-2:hover,
+.attention-strength-3:hover,
+.attention-strength-4:hover,
+.attention-strength-5:hover {
+  animation-play-state: paused;
+}
+
+/* Terminal cursor: appear/disappear (on/off), not dim */
+@keyframes cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+.typer-cursor {
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Profile typewriter: force segment colors so no word loses its style (beat inherited white) */
+.profile-typewriter {
+  color: rgb(243 244 246);
+}
+.profile-typewriter span[data-profile-segment="normal"] {
+  color: rgb(243 244 246) !important;
+}
+.profile-typewriter span.profile-highlight,
+.profile-typewriter span[data-profile-segment="highlight"] {
+  color: #f07e41 !important;
+  font-weight: 500 !important;
+}
+/* Ensure highlight wins over any parent text color (e.g. body text-white) */
+div.profile-typewriter span.profile-highlight {
+  color: #f07e41 !important;
+}
+
+/* Radar chart polygon: subtle pulse */
+@keyframes radar-polygon-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.82; }
+}
+.radar-polygon-pulse {
+  animation: radar-polygon-pulse 4s ease-in-out infinite;
+}
+
+/* Cockpit strip: LED blink */
+@keyframes cockpit-blink {
+  0%, 45%, 55%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.cockpit-blink {
+  animation: cockpit-blink 2s ease-in-out infinite;
+}
+
+/* Cockpit: log-style stream — fast, steps so lines tick up like a terminal (not smooth Star Wars crawl) */
+@keyframes cockpit-log-scroll {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); }
+}
+.cockpit-log-race {
+  animation: cockpit-log-scroll 0.85s steps(8) infinite;
+}
+
+/* Cockpit: bar graph pulse */
+@keyframes cockpit-bar-pulse {
+  0%, 100% { transform: scaleY(0.6); }
+  50% { transform: scaleY(1); }
+}
+.cockpit-bar-pulse {
+  transform-origin: bottom;
+  animation: cockpit-bar-pulse 1.8s ease-in-out infinite;
+}
+
+/* Radar labels: no position animation (text was jumping). Box only gets a subtle stroke pulse so text stays perfectly still. */
+@keyframes radar-label-box-pulse {
+  0%, 100% { stroke-opacity: 0.7; }
+  50% { stroke-opacity: 1; }
+}
+.radar-label-box-pulse {
+  animation: radar-label-box-pulse 4s ease-in-out infinite;
+}
+
+/* Projects: spotlight/dim (siblings dim when one card hovered) */
+.project-card-dimmed {
+  opacity: 0.68;
+  filter: brightness(0.82);
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+.project-card-spotlight {
+  transition: box-shadow 0.35s ease, border-color 0.35s ease, transform 0.35s ease;
+}
+
+/* Projects: featured card idle emphasis (brief border glow, one card at a time) */
+@keyframes project-card-idle-emphasis {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 126, 65, 0); }
+  30% { box-shadow: 0 0 16px 1px rgba(240, 126, 65, 0.35); }
+  70% { box-shadow: 0 0 20px 2px rgba(240, 126, 65, 0.25); }
+}
+.project-card-idle-active {
+  animation: project-card-idle-emphasis 2.2s ease-in-out 1;
+}
+
+/* Projects: thumbnail scan sweep (once on hover) */
+@keyframes project-thumb-sweep {
+  0% { transform: translateX(-100%); opacity: 0.5; }
+  100% { transform: translateX(400%); opacity: 0; }
+}
+.project-thumb-sweep {
+  width: 28%;
+  max-width: 120px;
+  background: linear-gradient(to right, transparent, rgba(240, 126, 65, 0.18), transparent);
+  box-shadow: 0 0 20px rgba(240, 126, 65, 0.15);
+}
+
+/* Projects: scroll-to-explore CTA */
+@keyframes scroll-cta-bounce {
+  0%, 100% { transform: translateY(0); opacity: 0.9; }
+  50% { transform: translateY(6px); opacity: 1; }
+}
+.scroll-cta-bounce {
+  animation: scroll-cta-bounce 2.2s ease-in-out infinite;
+}
+
+/* Contact: addictive loop — cooler animations, stronger incentive */
+@keyframes contact-card-idle-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240, 126, 65, 0); }
+  40% { box-shadow: 0 0 24px 3px rgba(240, 126, 65, 0.35); }
+  80% { box-shadow: 0 0 28px 2px rgba(240, 126, 65, 0.25); }
+}
+.contact-card-idle-active {
+  animation: contact-card-idle-glow 2.5s ease-in-out 1;
+}
+/* Icon ping ring — reward exploration */
+@keyframes contact-icon-ping {
+  0% { transform: scale(0.6); opacity: 0.6; border-width: 2px; }
+  100% { transform: scale(1.8); opacity: 0; border-width: 1px; }
+}
+.contact-icon-ping {
+  animation: contact-icon-ping 1s ease-out forwards;
+  pointer-events: none;
+}
+/* Hover hint reveal line — draws left to right */
+@keyframes contact-hint-reveal {
+  0% { transform: scaleX(0); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+.contact-hint-reveal {
+  transform-origin: left;
+  animation: contact-hint-reveal 0.4s ease-out forwards;
+}
+/* Button shimmer — incite interaction */
+@keyframes contact-btn-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.contact-btn-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(240, 126, 65, 0.12) 45%,
+    rgba(240, 126, 65, 0.2) 50%,
+    rgba(240, 126, 65, 0.12) 55%,
+    transparent 100%
+  );
+  animation: contact-btn-shimmer 2.5s ease-in-out infinite;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.contact-btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+/* Terminal cursor + ready line pulse */
+@keyframes contact-terminal-cursor {
+  0%, 45% { opacity: 1; }
+  50%, 95% { opacity: 0; }
+  100% { opacity: 1; }
+}
+.contact-terminal-cursor {
+  animation: contact-terminal-cursor 1.2s step-end infinite;
+}
+@keyframes contact-terminal-ready-pulse {
+  0%, 100% { text-shadow: 0 0 0 rgba(240, 126, 65, 0); }
+  50% { text-shadow: 0 0 12px rgba(240, 126, 65, 0.35); }
+}
+.contact-terminal-ready-pulse {
+  animation: contact-terminal-ready-pulse 2.5s ease-in-out infinite;
+}
+@keyframes contact-btn-breathe {
+  0%, 100% { border-color: rgba(240, 126, 65, 0.55); box-shadow: 0 0 0 0 rgba(240, 126, 65, 0); }
+  50% { border-color: rgba(240, 126, 65, 0.9); box-shadow: 0 0 18px 0 rgba(240, 126, 65, 0.2); }
+}
+.contact-btn-breathe {
+  animation: contact-btn-breathe 2.8s ease-in-out infinite;
+}
+/* Success state — rewarding pop */
+@keyframes contact-success-pop {
+  0% { transform: scale(0.92); opacity: 0.7; }
+  50% { transform: scale(1.06); }
+  100% { transform: scale(1); opacity: 1; }
+}
+.contact-success-pop {
+  animation: contact-success-pop 0.35s ease-out forwards;
+}
+/* Card corner accent on hover — connection feel */
+@keyframes contact-corner-accent {
+  0% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 1; }
+  100% { opacity: 1; transform: scale(1); }
+}
+.contact-corner-accent {
+  animation: contact-corner-accent 0.3s ease-out forwards;
+}
+/* Icon ping ring — runs on each hover (group triggers restart) */
+.contact-icon-ping-ring {
+  position: relative;
+}
+.contact-icon-ping-ring::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid rgba(240, 126, 65, 0.6);
+  opacity: 0;
+  pointer-events: none;
+}
+.group:hover .contact-icon-ping-ring::before {
+  animation: contact-icon-ping 1s ease-out forwards;
+}
+/* Hint line draws on hover, resets on leave */
+.contact-hint-line {
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.group:hover .contact-hint-line {
+  transform: scaleX(1);
+}
+
 /* Scanline effect */
 .scanline {
   position: fixed;
@@ -619,4 +1001,10 @@
     transform: translateY(-10px) rotate(180deg); 
     opacity: 0.3; 
   }
+}
+
+/* Profile typewriter highlight: must beat body text-white (last rule, high specificity) */
+html body .profile-typewriter span.profile-highlight[data-profile-segment="highlight"] {
+  color: #f07e41 !important;
+  font-weight: 500 !important;
 } 

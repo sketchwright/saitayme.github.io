@@ -5,14 +5,25 @@ export type ProjectSystem = {
   features: string[];
 };
 
+export type ProjectType = 'Professional' | 'Personal' | 'Game Jam' | 'Tool' | 'Prototype';
+
 export type Project = {
   id: string;
   title: string;
   description: string;
+  shortDescription?: string;
   category: 'Unity' | 'Unreal Engine';
   thumbnail: string;
   tags: string[];
+  projectType?: ProjectType;
+  role?: string;
+  company?: string;
+  timeframe?: string;
+  featured?: boolean;
+  priority?: number;
   isSecret?: boolean;
+  impact?: string[];
+  challenges?: string[];
   systems: ProjectSystem[];
   demoUrl?: string;
   githubUrl?: string;
