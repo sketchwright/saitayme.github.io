@@ -1,13 +1,132 @@
-import { motion } from 'framer-motion';
+import { motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import AnimatedGrid from '@/components/AnimatedGrid';
 import ImpactStrip from '@/components/ImpactStrip';
 import ProjectCarousel from '@/components/ProjectCarousel';
 import QuoteWall from '@/components/QuoteWall';
 import SkillAuthorityGrid from '@/components/SkillAuthorityGrid';
-import TutorialCarousel from '@/components/TutorialCarousel';
 import ContactCTA from '@/components/ContactCTA';
 import React from 'react';
+
+/** Cyberpunk scroll-invite: plays once after hero intro + short static pause */
+const SCROLL_INVITE_DELAY_FIRST = 5000;  // after boot: name + static
+const SCROLL_INVITE_DELAY_RETURN = 3000; // return visit: content + static
+
+function ScrollInvite() {
+  const { scrollYProgress } = useScroll();
+  const [exiting, setExiting] = React.useState(false);
+  const [hidden, setHidden] = React.useState(false);
+  React.useEffect(() => {
+    const unsub = scrollYProgress.on('change', (v) => {
+      if (v > 0.06) setExiting(true);
+    });
+    return () => unsub();
+  }, [scrollYProgress]);
+  if (hidden) return null;
+  return (
+    <motion.div
+      className="absolute inset-x-0 bottom-10 z-20 flex justify-center"
+      initial={{ opacity: 0, y: 32 }}
+      animate={
+        exiting
+          ? { opacity: 0, y: 48, scale: 0.96 }
+          : { opacity: 1, y: 0, scale: 1 }
+      }
+      transition={{
+        duration: exiting ? 0.5 : 0.55,
+        ease: exiting ? [0.4, 0, 0.2, 1] : [0.34, 1.56, 0.64, 1],
+      }}
+      onAnimationComplete={() => {
+        if (exiting) setHidden(true);
+      }}
+    >
+      {/* Panel: punchy “neon on” — scale pop + quick flicker */}
+      <motion.div
+        className="relative rounded-lg border border-primary/40 bg-cyber-black/95 backdrop-blur-sm px-5 pt-4 pb-3 min-w-[200px]"
+        initial={{ opacity: 0, scale: 0.82 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{
+          type: 'spring',
+          stiffness: 380,
+          damping: 22,
+          mass: 0.8,
+        }}
+        style={{
+          boxShadow: '0 0 0 1px rgba(240,126,65,0.15), 0 0 24px rgba(240,126,65,0.08)',
+        }}
+      >
+        {/* Neon “flicker on” — quick flash then settle */}
+        <motion.div
+          className="absolute inset-0 pointer-events-none rounded-lg"
+          initial={{ opacity: 0 }}
+          animate={{
+            opacity: [0, 0.9, 0.15, 0],
+          }}
+          transition={{
+            duration: 0.35,
+            times: [0, 0.15, 0.4, 1],
+          }}
+          style={{
+            boxShadow: 'inset 0 0 48px rgba(240,126,65,0.35)',
+          }}
+        />
+
+        {/* Scanning beam — runs down continuously */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div
+            className="scroll-invite-scan absolute left-0 right-0 w-full h-8"
+            style={{
+              background: 'linear-gradient(to bottom, transparent, rgba(240,126,65,0.35), transparent)',
+              boxShadow: '0 0 20px rgba(240,126,65,0.4)',
+            }}
+          />
+        </div>
+
+        {/* Terminal-style prompt + label */}
+        <div className="relative flex flex-col items-center gap-2">
+          <div className="flex items-center justify-center gap-2">
+            <span className="font-mono text-primary text-sm">»</span>
+            <span className="font-cyber text-primary uppercase tracking-[0.25em] text-xs neon-text">
+              Scroll to explore
+            </span>
+            <motion.span
+              className="inline-block w-0.5 h-3.5 bg-primary"
+              animate={{ opacity: [1, 0] }}
+              transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 0.4 }}
+            />
+          </div>
+          {/* Downward chevrons — clear “scroll down” cue */}
+          <div className="flex flex-col items-center gap-0.5 text-primary/90">
+            <span className="scroll-invite-chevron text-lg leading-none" style={{ textShadow: '0 0 8px rgba(240,126,65,0.5)' }}>▼</span>
+            <span className="scroll-invite-chevron scroll-invite-chevron-2 text-sm leading-none opacity-80">▼</span>
+            <span className="scroll-invite-chevron scroll-invite-chevron-3 text-xs leading-none opacity-60">▼</span>
+          </div>
+        </div>
+
+        {/* Subtle corner accents — matches hero, not heavy HUD */}
+        <div className="absolute top-1.5 left-1.5 w-2 h-2 border-l border-t border-primary/50 rounded-tl" />
+        <div className="absolute top-1.5 right-1.5 w-2 h-2 border-r border-t border-primary/50 rounded-tr" />
+        <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-l border-b border-primary/50 rounded-bl" />
+        <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-r border-b border-primary/50 rounded-br" />
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/** Thin progress bar on the right — rewards scrolling */
+function ScrollProgress() {
+  const { scrollYProgress } = useScroll();
+  const height = useTransform(scrollYProgress, [0, 1], ['0%', '100%']);
+  return (
+    <div className="fixed right-0 top-0 w-1 h-full z-40 pointer-events-none">
+      <div className="absolute inset-0 bg-cyber-black/80" />
+      <motion.div
+        className="absolute bottom-0 left-0 right-0 bg-primary/80 rounded-l"
+        style={{ height }}
+              />
+    </div>
+  );
+}
 
 interface HomeProps {
   onPlayGame: () => void;
@@ -245,6 +364,16 @@ const Home = ({ onPlayGame }: HomeProps) => {
     if (typeof sessionStorage === 'undefined') return false;
     return sessionStorage.getItem(BOOT_SEEN_KEY) === 'true';
   });
+  const [showScrollInvite, setShowScrollInvite] = React.useState(false);
+  const initialHadSeenBoot = React.useRef(hasSeenBoot);
+
+  // After name anim + 1–2s static, show scroll-invite once
+  React.useEffect(() => {
+    if (!hasSeenBoot) return;
+    const delay = initialHadSeenBoot.current ? SCROLL_INVITE_DELAY_RETURN : SCROLL_INVITE_DELAY_FIRST;
+    const t = setTimeout(() => setShowScrollInvite(true), delay);
+    return () => clearTimeout(t);
+  }, [hasSeenBoot]);
 
   const gameButtonVariants = React.useMemo(() => ({
     initial: { opacity: 0, y: 20 },
@@ -285,18 +414,18 @@ const Home = ({ onPlayGame }: HomeProps) => {
       {/* Scanline Effect */}
       <div className="scanline" />
 
-      {/* Hero Section */}
+      {/* Hero — full viewport so nothing peeks under the scroll invite */}
       <motion.section
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: heroDuration, delay: heroDelay, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="h-screen flex items-center relative overflow-hidden"
+        className="min-h-screen h-screen flex flex-col justify-between relative overflow-hidden"
       >
         {/* Animated Grid Background */}
         <AnimatedGrid />
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyber-black/50 to-cyber-black" />
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyber-black/50 to-cyber-black/80" />
 
-        <div className="cyber-container relative z-10">
+        <div className="cyber-container relative z-10 flex-1 flex flex-col justify-center pt-12">
           <motion.div
             className="text-center space-y-12 z-10"
             initial="hidden"
@@ -369,11 +498,20 @@ const Home = ({ onPlayGame }: HomeProps) => {
             </motion.div>
           </motion.div>
         </div>
+
+        {/* Tags at bottom edge of hero — existing ImpactStrip moved here */}
+        <div className="relative z-10 pb-4">
+          <ImpactStrip compact={true} />
+        </div>
+
+        {showScrollInvite && <ScrollInvite />}
       </motion.section>
 
-      {/* Impact Strip — instant credibility proof */}
-      <ImpactStrip />
+      {/* Scroll progress — rewards scrolling with a filling bar */}
+      <ScrollProgress />
 
+      {/* Content below the fold — id for click-to-scroll */}
+      <div id="home-explore">
       {/* Featured Project Carousel */}
       <section className="bg-cyber-dark/50">
         <ProjectCarousel />
@@ -387,11 +525,9 @@ const Home = ({ onPlayGame }: HomeProps) => {
         <SkillAuthorityGrid />
       </section>
 
-      {/* Modding / Tutorial Media */}
-      <TutorialCarousel />
-
       {/* Final Contact CTA */}
       <ContactCTA />
+      </div>
     </div>
   );
 };

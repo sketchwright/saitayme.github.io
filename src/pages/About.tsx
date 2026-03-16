@@ -126,8 +126,8 @@ const heroChipsWrap = { ...fadeIn, transition: { duration: 0.3, delay: 0.52, eas
 const heroCTAs = { ...fadeIn, transition: { duration: 0.3, delay: 0.68, ease: 'easeOut' } };
 
 
-/** Content width — wide enough for asymmetrical composition; min-w-0 + overflow prevents horizontal scroll on resize/mobile */
-const CONTENT_MAX = 'max-w-5xl mx-auto w-full min-w-0 px-4 sm:px-6 overflow-x-hidden';
+/** Content width — overflow-x-clip prevents horizontal scroll without making overflow-y auto (avoids stray scrollbar that appears then disappears on click) */
+const CONTENT_MAX = 'max-w-5xl mx-auto w-full min-w-0 px-4 sm:px-6 overflow-x-clip';
 
 /** Vertical rhythm: more breathing room between major sections */
 const SECTION_SPACE = 'mb-20 md:mb-28';

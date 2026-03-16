@@ -12,7 +12,11 @@ const IMPACT_ITEMS = [
 const EMPHASIS_INTERVAL_MS = 5000;
 const EMPHASIS_DURATION_MS = 1200;
 
-export default function ImpactStrip() {
+interface ImpactStripProps {
+  compact?: boolean;
+}
+
+export default function ImpactStrip({ compact }: ImpactStripProps) {
   const [activeIndex, setActiveIndex] = useState(-1);
   const sectionRef = useRef<HTMLElement>(null);
   useInView(sectionRef, { once: true, amount: 0.3 });
@@ -38,9 +42,9 @@ export default function ImpactStrip() {
       ref={sectionRef}
       initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: '-80px' }}
+      viewport={{ once: true, margin: compact ? '-20px' : '-80px' }}
       transition={{ duration: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }}
-      className="py-16 md:py-20 relative overflow-hidden"
+      className={`relative overflow-hidden ${compact ? 'py-3 md:py-4' : 'py-16 md:py-20'}`}
     >
       <div className="cyber-container relative z-10">
         <div className="flex flex-wrap justify-center gap-3 md:gap-4">

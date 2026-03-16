@@ -104,7 +104,7 @@ export default function ProjectCarousel() {
       whileInView={{ opacity: 1 }}
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.6 }}
-      className="py-20 md:py-28 relative overflow-hidden"
+      className="py-20 md:py-28 relative"
     >
       <div className="cyber-container relative z-10 mb-10">
         <motion.h2
@@ -125,26 +125,28 @@ export default function ProjectCarousel() {
           Shipped titles and production systems
         </motion.p>
       </div>
-      <div
-        ref={scrollRef}
-        className="overflow-hidden"
-        onMouseEnter={() => setIsHovering(true)}
-        onMouseLeave={() => setIsHovering(false)}
-      >
-        <motion.div
-          className="flex gap-6 pb-4"
-          initial={false}
-          style={{
-            width: totalWidth * 3,
-            x: -scrollLeft,
-          }}
+      <div className="cyber-container">
+        <div
+          ref={scrollRef}
+          className="holo-ad-panel overflow-hidden rounded-xl relative"
+          onMouseEnter={() => setIsHovering(true)}
+          onMouseLeave={() => setIsHovering(false)}
         >
-          {[...featured, ...featured, ...featured].map((project, i) => (
-            <div key={`${project.id}-${i}`} className="flex-shrink-0 flex justify-center">
-              <CarouselCard project={project} index={i % featured.length} />
-            </div>
-          ))}
-        </motion.div>
+          <motion.div
+            className="flex gap-6 py-6 px-4 md:px-6 relative z-[1]"
+            initial={false}
+            style={{
+              width: totalWidth * 3,
+              x: -scrollLeft,
+            }}
+          >
+            {[...featured, ...featured, ...featured].map((project, i) => (
+              <div key={`${project.id}-${i}`} className="flex-shrink-0 flex justify-center">
+                <CarouselCard project={project} index={i % featured.length} />
+              </div>
+            ))}
+          </motion.div>
+        </div>
       </div>
       <div className="cyber-container mt-6 text-center">
         <Link
