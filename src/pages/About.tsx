@@ -11,12 +11,12 @@ import InteractiveBackground from '@/components/InteractiveBackground';
 const PROFILE_HIGHLIGHT_PHRASES = [
   'Crime Boss: Rockay City',
   'Ingame Studios',
-  'Nerd Monkeys',
+  'nerdmonkeys',
   'Unreal Engine',
-  'EOS-based',
-  'moddable',
-  'readable code',
-  'shipping',
+  'Epic Online Services',
+  'Join-In-Progress',
+  'Crime Boss Modkit',
+  'Rockay Rumble',
 ];
 
 /** Splits text by phrases and returns segments; matching segments get highlight class. Uses earliest occurrence so "Ingame Studios" is highlighted before "Crime Boss" when both appear. */
@@ -147,11 +147,11 @@ const HERO_CHIPS = [
 /** Chips that get subtle loop emphasis (priority proof signals) */
 const CHIP_PRIORITY = new Set(['Unreal Engine', 'Crime Boss: Rockay City', 'Multiplayer / EOS', 'Blueprint & C++', 'Unity / Tools']);
 
-/** Career highlight cards: skimmable, bullet-led */
+/** Career highlight cards: skimmable, bullet-led (matches CV experience) */
 const CAREER_HIGHLIGHTS = [
   {
     title: 'Ingame Studios',
-    subtitle: 'Gameplay Programmer · Oct 2025 – Present',
+    subtitle: 'Game Developer · Oct 2025 – Present',
     project: 'Crime Boss: Rockay City',
     bullets: [
       '50+ bug fixes in Update 20 (gameplay, UI, replication)',
@@ -161,10 +161,11 @@ const CAREER_HIGHLIGHTS = [
     accent: true,
   },
   {
-    title: 'Nerd Monkeys',
-    subtitle: 'Game Developer · Feb – Jun 2025',
-    project: 'Unity professional projects',
+    title: 'nerdmonkeys',
+    subtitle: 'Game Developer · Mar – Jun 2025',
+    project: 'NOK & Unity professional projects',
     bullets: [
+      'NOK: Sound Manager, editor tools, gameplay',
       'Gameplay systems, editor tools, ScriptableObject workflows',
       'Advanced audio (NOK), scene loading, proximity chat',
       'Shipped indie & client work',
@@ -184,8 +185,9 @@ const CAREER_HIGHLIGHTS = [
   },
 ];
 
-/** One compact about paragraph (5–6 lines) */
-const ABOUT_SUMMARY = `I'm a gameplay and systems programmer focused on Unreal Engine, multiplayer, and moddable architecture. At Ingame Studios I work on Crime Boss: Rockay City — gameplay and replication fixes, modkit development, and reusable EOS-based multiplayer systems. Before that I built gameplay systems, tools, and audio at Nerd Monkeys on professional Unity projects. I care about readable code, clear systems, and shipping.`;
+/** About / typewriter paragraph: CV tagline + filler so the profile box feels full */
+const ABOUT_SUMMARY =
+  'Gameplay Programmer specializing in multiplayer systems and networked gameplay in Unreal Engine, experienced with replication, Join-In-Progress, and Epic Online Services on a shipped commercial title. I also fix the bugs that make you alt-tab to the wiki at 2 a.m. Right now I am on Crime Boss: Rockay City at Ingame Studios, and on the Modkit so people can add custom bosses and mod Rockay Rumble. I used to do sound and editor tools at nerdmonkeys on Unity stuff. I like code that reads clean and multiplayer that does not desync.';
 
 /** Core strengths: 6 categories. Card = minimal teaser; detail panel = in-depth (different content). */
 const CORE_STRENGTHS = [
@@ -447,7 +449,7 @@ const About = () => {
                     }}
                     transition={{ duration: 1.4, times: [0, 0.35, 1], delay: 0.4 }}
                   >
-                    Julian Strunz
+                    Julian Strunz <span className="attention-badge text-primary font-cyber font-semibold text-base uppercase tracking-wider ml-1">BSc</span>
                   </motion.span>
                 </motion.h1>
                 <motion.p
@@ -995,10 +997,15 @@ const About = () => {
                 <div className="flex flex-wrap items-baseline gap-2 mb-1">
                   <span className="attention-badge text-primary font-cyber font-semibold text-sm uppercase tracking-wider">BSc</span>
                   <span className="text-gray-400 text-xs">·</span>
-                  <span className="text-gray-200 font-medium text-sm">Media Technology and Design</span>
+                  <span className="text-gray-200 font-medium text-sm">Mediatechnology and Design</span>
                 </div>
-                <p className="text-gray-100 font-medium text-sm">Hagenberg Campus, FH Upper Austria</p>
+                <p className="text-gray-100 font-medium text-sm">FH Hagenberg</p>
                 <p className="text-gray-400 text-xs mt-0.5">Oct 2022 – Jul 2025</p>
+                <div className="mt-3 pt-3 border-t border-primary/15">
+                  <span className="attention-badge text-primary font-cyber font-semibold text-sm uppercase tracking-wider">Matura</span>
+                  <p className="text-gray-100 font-medium text-sm">BRG Hamerling</p>
+                  <p className="text-gray-400 text-xs mt-0.5">Jul 2012 – May 2020</p>
+                </div>
               </div>
               <div className="p-6 md:p-8 group">
                 <div className="flex items-center gap-2 mb-2">
@@ -1015,9 +1022,10 @@ const About = () => {
                 <ContactPanel compact />
                 <div className="mt-4 flex flex-wrap gap-2">
                   <LanguageChip countryCode="de" label="German" context="Native." />
-                  <LanguageChip countryCode="gb" label="English" context="Work & projects." />
-                  <LanguageChip countryCode="es" label="Spanish" context="Basic." />
+                  <LanguageChip countryCode="gb" label="English" context="Advanced · C1 (Anglo Continental)." />
+                  <LanguageChip countryCode="es" label="Spanish" context="Basic (second foreign language in AHS)." />
                 </div>
+                <p className="mt-3 text-gray-400 text-xs font-mono uppercase tracking-wider">Hobbies: Fishing, Fitness, Music</p>
               </div>
             </div>
           </motion.div>

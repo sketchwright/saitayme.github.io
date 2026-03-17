@@ -40,9 +40,11 @@ function CarouselCard({ project, index }: { project: Project; index: number }) {
             />
           </motion.div>
           <div className="absolute inset-0 bg-gradient-to-t from-cyber-black via-transparent to-transparent opacity-80" />
-          <div className="absolute bottom-2 left-3 right-3">
-            <h3 className="font-cyber text-lg text-white drop-shadow-lg">{project.title}</h3>
-            <p className="text-xs text-primary/90 font-mono">{project.category}</p>
+          <div className="absolute bottom-2 left-3 right-3 flex flex-col gap-0.5">
+            <div className="inline-flex w-fit max-w-full flex-col gap-0.5 rounded-md border border-primary/50 border-l-4 border-l-primary bg-black/40 px-3 py-1.5 shadow-[0_0_18px_rgba(240,126,65,0.18),0_2px_12px_rgba(0,0,0,0.6)] backdrop-blur-sm">
+              <h3 className="font-cyber text-lg text-white leading-tight tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{project.title}</h3>
+              <p className="text-xs text-primary font-mono uppercase tracking-wider drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{project.category}</p>
+            </div>
           </div>
         </div>
         <div className="p-4 flex-1 flex flex-col border-t border-primary/20">

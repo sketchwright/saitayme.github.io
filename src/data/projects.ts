@@ -75,7 +75,7 @@ export const projects: Project[] = [
     id: 'crime-boss-modkit',
     title: 'Crime Boss Official Modkit',
     description: 'Contributed to the official Crime Boss modkit by refactoring gameplay systems to be Blueprint-extensible and DataTable-driven, enabling meaningful mod support without source code access.',
-    shortDescription: 'Refactored gameplay for Blueprint/DataTable moddability; zombie mode and custom boss support.',
+    shortDescription: 'Refactored gameplay for Blueprint/DataTable moddability; Rockay Rumble and custom boss support.',
     thumbnail: '/projects/crimeboss.png',
     category: 'Unreal Engine',
     tags: ['Modding', 'Tools', 'Blueprint Architecture', 'Data-Driven Design'],
@@ -86,7 +86,7 @@ export const projects: Project[] = [
     featured: true,
     priority: 2,
     impact: [
-      'Made Rockay Rumble zombie mode moddable',
+      'Made Rockay Rumble moddable',
       'Enabled custom playable boss character support',
       'Contributed to public modding docs and tutorial videos',
     ],

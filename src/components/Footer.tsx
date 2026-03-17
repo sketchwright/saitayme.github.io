@@ -32,7 +32,7 @@ const Footer = () => {
             transition={{ delay: 0.2 }}
             className="text-gray-400 font-mono text-sm"
           >
-            © {new Date().getFullYear()} Julian R. Strunz. All rights reserved.
+            © {new Date().getFullYear()} Julian Strunz. All rights reserved.
           </motion.div>
 
           {/* Social Links */}

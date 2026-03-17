@@ -1,26 +1,27 @@
 import { useState, useRef } from 'react';
 import { motion, useInView } from 'framer-motion';
 
+/** Skills from CV: Programming, Engines, Multiplayer, Gameplay, Tools */
 const SKILLS = [
   {
+    label: 'Programming',
+    bullets: ['C++', 'C#', 'Blueprint'],
+  },
+  {
+    label: 'Engines',
+    bullets: ['Unity', 'Unreal'],
+  },
+  {
+    label: 'Multiplayer',
+    bullets: ['Replication', 'JIP', 'EOS', 'Photon'],
+  },
+  {
     label: 'Gameplay',
-    bullets: ['Blueprint & C++', 'Abilities & items', 'Mission logic', 'Production debugging'],
-  },
-  {
-    label: 'Networking',
-    bullets: ['EOS sessions', 'Replication debugging', 'Lobby architecture', 'Dedicated servers'],
-  },
-  {
-    label: 'AI',
-    bullets: ['Behavior systems', 'State machines', 'Navigation', 'Performance'],
-  },
-  {
-    label: 'Systems',
-    bullets: ['Subsystems', 'Data-driven design', 'Moddable architecture', 'APIs'],
+    bullets: ['GAS', 'Gameplay Tags', 'Abilities & items', 'Mission logic', 'Production debugging'],
   },
   {
     label: 'Tools',
-    bullets: ['Editor extensions', 'Pipelines', 'Modkits', 'Technical docs'],
+    bullets: ['Git', 'SVN', 'Perforce', 'Jira', 'Confluence'],
   },
 ];
 
@@ -36,7 +37,7 @@ export default function SkillAuthorityGrid() {
       whileInView={{ opacity: 1 }}
       viewport={{ once: true, margin: '-80px' }}
       transition={{ duration: 0.6 }}
-      className="py-20 md:py-28 relative"
+      className="py-20 md:py-28 pb-32 md:pb-40 relative"
     >
       <div className="cyber-container relative z-10">
         <motion.h2
@@ -45,7 +46,7 @@ export default function SkillAuthorityGrid() {
           viewport={{ once: true }}
           className="text-2xl md:text-3xl font-cyber text-primary uppercase tracking-wider mb-4"
         >
-          Technical Authority
+          Skills
         </motion.h2>
         <motion.p
           initial={{ opacity: 0, y: 8 }}
@@ -54,9 +55,10 @@ export default function SkillAuthorityGrid() {
           transition={{ delay: 0.1 }}
           className="text-gray-400 font-mono text-sm mb-12"
         >
-          Depth across gameplay, networking, and engine systems
+          Programming, engines, multiplayer, and tools
         </motion.p>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {/* Grid items have min-height so expanded cards don't push content below */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 [grid-auto-rows:minmax(220px,auto)]">
           {SKILLS.map((skill, idx) => (
             <motion.div
               key={skill.label}
@@ -64,10 +66,11 @@ export default function SkillAuthorityGrid() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: idx * 0.06 }}
+              className="min-h-[220px] flex flex-col"
             >
               <motion.div
                 className={`
-                  rounded-xl border p-5 min-h-[120px] md:min-h-[140px] flex flex-col justify-between
+                  rounded-xl border p-5 min-h-[120px] w-full flex flex-col flex-shrink-0
                   transition-colors duration-300
                   ${hovered === idx
                     ? 'border-primary/60 bg-primary/5 shadow-[0_0_24px_rgba(240,126,65,0.08)]'
@@ -81,13 +84,12 @@ export default function SkillAuthorityGrid() {
                 <h3 className="text-sm font-cyber text-primary uppercase tracking-wider">
                   {skill.label}
                 </h3>
-                {hovered === idx && (
+                {hovered === idx ? (
                   <motion.ul
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 4 }}
                     transition={{ duration: 0.25 }}
-                    className="mt-3 space-y-1 text-gray-300 text-xs font-mono"
+                    className="mt-3 space-y-1 text-gray-300 text-xs font-mono list-none"
                   >
                     {skill.bullets.map((b) => (
                       <li key={b} className="flex items-center gap-1.5">
@@ -96,7 +98,7 @@ export default function SkillAuthorityGrid() {
                       </li>
                     ))}
                   </motion.ul>
-                )}
+                ) : null}
               </motion.div>
             </motion.div>
           ))}

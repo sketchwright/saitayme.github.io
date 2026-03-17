@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MdEmail, MdPhone, MdLocationOn, MdContentCopy, MdCheck } from 'react-icons/md';
 
 const contact = {
-  city: 'Linz, Austria',
+  city: 'Brno, Czech Republic',
   email: 'julian.strunz@hotmail.com',
   phone: '+43 664 9145420',
 };

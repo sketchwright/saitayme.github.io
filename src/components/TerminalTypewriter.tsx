@@ -3,9 +3,9 @@ import { Typewriter } from 'react-simple-typewriter';
 import { motion } from 'framer-motion';
 
 const lines = [
-  'Julian Strunz',
-  'Game Developer & Engine Programmer',
-  'Specialties: Unity, Unreal Engine, C#, C++, Audio, Tools',
+  'Julian Strunz BSc',
+  'Gameplay Programmer — Multiplayer & networked gameplay (Unreal)',
+  'Skills: C++, C#, Blueprint · Unity, Unreal · Replication, JIP, EOS · Git, Perforce, Jira',
 ];
 
 const crtNoise = {
