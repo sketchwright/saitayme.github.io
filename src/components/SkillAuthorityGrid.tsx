@@ -64,37 +64,40 @@ export default function SkillAuthorityGrid() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: idx * 0.06 }}
-              onMouseEnter={() => setHovered(idx)}
-              onMouseLeave={() => setHovered(null)}
-              className={`
-                rounded-xl border p-5 min-h-[120px] md:min-h-[140px] flex flex-col justify-between
-                transition-colors duration-300
-                ${hovered === idx
-                  ? 'border-primary/60 bg-primary/5 shadow-[0_0_24px_rgba(240,126,65,0.08)]'
-                  : 'border-primary/25 bg-cyber-dark/60 hover:border-primary/40'
-                }
-              `}
-              whileHover={{ scale: 1.02, y: -4 }}
             >
-              <h3 className="text-sm font-cyber text-primary uppercase tracking-wider">
-                {skill.label}
-              </h3>
-              {hovered === idx && (
-                <motion.ul
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 4 }}
-                  transition={{ duration: 0.25 }}
-                  className="mt-3 space-y-1 text-gray-300 text-xs font-mono"
-                >
-                  {skill.bullets.map((b) => (
-                    <li key={b} className="flex items-center gap-1.5">
-                      <span className="text-primary/60">·</span>
-                      {b}
-                    </li>
-                  ))}
-                </motion.ul>
-              )}
+              <motion.div
+                className={`
+                  rounded-xl border p-5 min-h-[120px] md:min-h-[140px] flex flex-col justify-between
+                  transition-colors duration-300
+                  ${hovered === idx
+                    ? 'border-primary/60 bg-primary/5 shadow-[0_0_24px_rgba(240,126,65,0.08)]'
+                    : 'border-primary/25 bg-cyber-dark/60 hover:border-primary/40'
+                  }
+                `}
+                onMouseEnter={() => setHovered(idx)}
+                onMouseLeave={() => setHovered(null)}
+                whileHover={{ scale: 1.02, y: -4 }}
+              >
+                <h3 className="text-sm font-cyber text-primary uppercase tracking-wider">
+                  {skill.label}
+                </h3>
+                {hovered === idx && (
+                  <motion.ul
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: 0.25 }}
+                    className="mt-3 space-y-1 text-gray-300 text-xs font-mono"
+                  >
+                    {skill.bullets.map((b) => (
+                      <li key={b} className="flex items-center gap-1.5">
+                        <span className="text-primary/60">·</span>
+                        {b}
+                      </li>
+                    ))}
+                  </motion.ul>
+                )}
+              </motion.div>
             </motion.div>
           ))}
         </div>
