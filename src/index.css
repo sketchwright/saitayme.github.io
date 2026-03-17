@@ -180,6 +180,28 @@
   animation-delay: 2s;
 }
 
+/* Recommendations: clean cards, same holo style as rest of page — no glitch */
+.quote-card-flex {
+  border: 1px solid rgba(var(--attention-rgb), 0.5);
+  background: linear-gradient(
+    135deg,
+    rgba(10, 10, 10, 0.98) 0%,
+    rgba(18, 22, 24, 0.96) 50%,
+    rgba(10, 10, 10, 0.98) 100%
+  );
+  box-shadow:
+    0 24px 48px -12px rgba(0, 0, 0, 0.5),
+    0 0 24px rgba(var(--attention-rgb), 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.quote-card-flex:hover {
+  border-color: rgba(var(--attention-rgb), 0.65);
+  box-shadow:
+    0 32px 64px -16px rgba(0, 0, 0, 0.55),
+    0 0 40px rgba(var(--attention-rgb), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
 /* Priority chips: obvious border + glow + background pulse */
 @keyframes attention-chip {
   0%, 100% {
