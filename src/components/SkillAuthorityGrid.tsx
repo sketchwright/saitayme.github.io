@@ -74,8 +74,7 @@ export default function SkillAuthorityGrid() {
                   : 'border-primary/25 bg-cyber-dark/60 hover:border-primary/40'
                 }
               `}
-              whileHover={{ scale: 1.02, y: -4 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 20, delay: 0 }}
+              whileHover={{ scale: 1.02, y: -4, transition: { type: 'spring', stiffness: 300, damping: 20 } }}
             >
               <h3 className="text-sm font-cyber text-primary uppercase tracking-wider">
                 {skill.label}
