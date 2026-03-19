@@ -14,7 +14,7 @@ const SYS_LINE_2_DELAY_MS = 4500;
 const socialLinks = [
   {
     name: 'Itch.io',
-    url: 'https://itch.io/profile/sssodium',
+    url: 'https://sketchwright.itch.io/',
     icon: FaItchIo,
     color: '#fa5c5c',
     description: 'Game Portfolio',
@@ -32,7 +32,7 @@ const socialLinks = [
   },
   {
     name: 'GitHub',
-    url: 'https://github.com/saitayme',
+    url: 'https://github.com/sketchwright',
     icon: FaGithub,
     color: '#6e5494',
     description: 'Code Repository',

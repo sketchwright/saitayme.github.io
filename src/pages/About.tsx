@@ -153,6 +153,7 @@ const CAREER_HIGHLIGHTS = [
     title: 'Ingame Studios',
     subtitle: 'Game Developer · Oct 2025 – Present',
     project: 'Crime Boss: Rockay City',
+    companyUrl: 'https://ingamestudios.com/',
     bullets: [
       '50+ bug fixes in Update 20 (gameplay, UI, replication)',
       'Modkit: Blueprint/DataTable-driven moddable systems',
@@ -164,6 +165,7 @@ const CAREER_HIGHLIGHTS = [
     title: 'nerdmonkeys',
     subtitle: 'Game Developer · Mar – Jun 2025',
     project: 'NOK & Unity professional projects',
+    companyUrl: 'https://nerdmonkeys.games/',
     bullets: [
       'NOK: Sound Manager, editor tools, gameplay',
       'Gameplay systems, editor tools, ScriptableObject workflows',
@@ -555,6 +557,16 @@ const About = () => {
                 {CAREER_HIGHLIGHTS[0].title}
               </h3>
               <p className="text-xs text-gray-400 font-mono mb-2">{CAREER_HIGHLIGHTS[0].subtitle}</p>
+              {'companyUrl' in CAREER_HIGHLIGHTS[0] && CAREER_HIGHLIGHTS[0].companyUrl && (
+                <a
+                  href={CAREER_HIGHLIGHTS[0].companyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/50 text-primary/90 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors rounded mb-3"
+                >
+                  Visit site →
+                </a>
+              )}
               <p className="text-base text-white font-medium mb-4 pl-2 border-l-2 border-l-primary/60">
                 {CAREER_HIGHLIGHTS[0].project}
               </p>
@@ -585,6 +597,16 @@ const About = () => {
                   {CAREER_HIGHLIGHTS[1].title}
                 </h3>
                 <p className="text-xs text-gray-400 font-mono mb-2">{CAREER_HIGHLIGHTS[1].subtitle}</p>
+                {'companyUrl' in CAREER_HIGHLIGHTS[1] && CAREER_HIGHLIGHTS[1].companyUrl && (
+                  <a
+                    href={CAREER_HIGHLIGHTS[1].companyUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/50 text-primary/90 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors rounded mb-2"
+                  >
+                    Visit site →
+                  </a>
+                )}
                 <p className="text-sm text-white font-medium mb-3">{CAREER_HIGHLIGHTS[1].project}</p>
                 <ul className="space-y-2 text-gray-200 text-sm">
                   {CAREER_HIGHLIGHTS[1].bullets.map((b, j) => (

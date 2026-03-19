@@ -6,7 +6,7 @@ const Footer = () => {
   const socialLinks = [
     {
       name: 'GitHub',
-      url: 'https://github.com/saitayme',
+      url: 'https://github.com/sketchwright',
       icon: FaGithub,
     },
     {
@@ -16,7 +16,7 @@ const Footer = () => {
     },
     {
       name: 'Itch.io',
-      url: 'https://itch.io/profile/sssodium',
+      url: 'https://sketchwright.itch.io/',
       icon: FaItchIo,
     },
   ];

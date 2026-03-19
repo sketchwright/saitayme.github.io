@@ -55,6 +55,7 @@ export const projects: Project[] = [
       'Investigating complex replication edge cases',
       'Navigating a large established codebase quickly',
     ],
+    demoUrl: 'https://store.steampowered.com/app/2933080/Crime_Boss_Rockay_City/',
     systems: [
       {
         name: 'Gameplay Bug Fixing & Systems Maintenance',
@@ -95,6 +96,7 @@ export const projects: Project[] = [
       'Exposing gameplay logic safely to Blueprint',
       'Extending in-game DataTable workflows with custom features',
     ],
+    demoUrl: 'https://store.steampowered.com/app/2933080/Crime_Boss_Rockay_City/',
     systems: [
       {
         name: 'Moddable Gameplay Systems',
@@ -135,6 +137,7 @@ export const projects: Project[] = [
       'Handling async/session lifecycle behavior',
       'Designing one-size-fits-all multiplayer architecture',
     ],
+    demoUrl: 'https://store.steampowered.com/app/2933080/Crime_Boss_Rockay_City/',
     systems: [
       {
         name: 'Session & Lobby Framework',
@@ -164,6 +167,7 @@ export const projects: Project[] = [
     company: 'Nerd Monkeys',
     featured: true,
     priority: 4,
+    demoUrl: 'https://store.steampowered.com/app/2451750/NOK/',
     systems: [
       {
         name: 'Dynamic Sound System',
@@ -357,7 +361,7 @@ export const projects: Project[] = [
         ],
       },
     ],
-    demoUrl: 'https://sssodium.itch.io/broken-glass',
+    demoUrl: 'https://sketchwright.itch.io/broken-glass',
   },
   {
     id: 'scalien',
@@ -407,7 +411,7 @@ export const projects: Project[] = [
         ],
       },
     ],
-    githubUrl: 'https://github.com/saitayme/Five-Nights-At-Furbys.git',
+    githubUrl: 'https://github.com/sketchwright/Five-Nights-At-Furbys.git',
   },
 ];
 

@@ -204,10 +204,10 @@ const ProjectModal = ({ project, onClose }: ProjectModalProps) => {
               ))}
             </motion.div>
 
-            {/* Links */}
+            {/* Links — contextual labels, same button style */}
             <motion.div
               variants={itemVariants}
-              className="pt-6 border-t border-primary/30 flex gap-4"
+              className="pt-6 border-t border-primary/30 flex flex-wrap gap-3"
             >
               {project.demoUrl && (
                 <a
@@ -216,7 +216,11 @@ const ProjectModal = ({ project, onClose }: ProjectModalProps) => {
                   rel="noopener noreferrer"
                   className="cyber-button"
                 >
-                  View Demo
+                  {project.demoUrl.includes('steampowered')
+                    ? 'View on Steam'
+                    : project.demoUrl.includes('itch.io')
+                      ? 'View on itch.io'
+                      : 'View project'}
                 </a>
               )}
               {project.githubUrl && (
@@ -224,9 +228,9 @@ const ProjectModal = ({ project, onClose }: ProjectModalProps) => {
                   href={project.githubUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="cyber-button-secondary"
+                  className="cyber-button"
                 >
-                  View Code
+                  View code
                 </a>
               )}
             </motion.div>
