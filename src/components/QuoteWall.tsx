@@ -1,15 +1,41 @@
 import { motion } from 'framer-motion';
 
-const QUOTES = [
-  'Julian solved several complex gameplay issues extremely quickly.',
-  'Excellent debugging and replication skills.',
-  'Strong systems thinking and clear communication.',
+type Recommendation = {
+  quote: string;
+  /** Person's name (omit for generic attribution) */
+  name?: string;
+  /** Primary line under quote (e.g. role / title) */
+  role: string;
+  /** Optional second line — games / context */
+  credits?: string;
+};
+
+const RECOMMENDATIONS: Recommendation[] = [
+  {
+    quote:
+      "I enjoyed working with Julian! He's responsible, proactive and fast at implementing new technologies.",
+    name: 'Alexey Sytianov',
+    role: 'Lead Game Designer & Writer — S.T.A.L.K.E.R.',
+    credits: 'Metro Exodus · Chernobylite',
+  },
+  {
+    quote: 'Julian solved several complex gameplay issues extremely quickly.',
+    role: 'Collaborator / Lead',
+  },
+  {
+    quote: 'Excellent debugging and replication skills.',
+    role: 'Collaborator / Lead',
+  },
+  {
+    quote: 'Strong systems thinking and clear communication.',
+    role: 'Collaborator / Lead',
+  },
 ];
 
 const EASE = [0.22, 0.61, 0.36, 1];
 const STAGGER = 0.12;
 
-function QuoteCard({ quote, index }: { quote: string; index: number }) {
+function QuoteCard({ item, index }: { item: Recommendation; index: number }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 32 }}
@@ -36,14 +62,22 @@ function QuoteCard({ quote, index }: { quote: string; index: number }) {
       />
       <div className="relative px-6 md:px-8 py-8 md:py-10 z-[2]">
         <p className="text-gray-100 text-lg md:text-xl leading-relaxed font-medium">
-          &ldquo;{quote}&rdquo;
+          &ldquo;{item.quote}&rdquo;
         </p>
-        <p
-          className="text-xs font-mono uppercase tracking-[0.2em] mt-6 font-semibold"
-          style={{ color: 'rgba(240, 126, 65, 0.85)' }}
-        >
-          Collaborator / Lead
-        </p>
+        <div className="mt-6 space-y-1">
+          {item.name && (
+            <p className="text-sm font-cyber text-white tracking-wide">{item.name}</p>
+          )}
+          <p
+            className="text-xs font-mono uppercase tracking-[0.2em] font-semibold"
+            style={{ color: 'rgba(240, 126, 65, 0.85)' }}
+          >
+            {item.role}
+          </p>
+          {item.credits && (
+            <p className="text-xs font-mono text-gray-500 tracking-wide pt-0.5">{item.credits}</p>
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -75,9 +109,9 @@ export default function QuoteWall() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-6xl">
-          {QUOTES.map((quote, index) => (
-            <QuoteCard key={index} quote={quote} index={index} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 max-w-7xl">
+          {RECOMMENDATIONS.map((item, index) => (
+            <QuoteCard key={index} item={item} index={index} />
           ))}
         </div>
       </div>
