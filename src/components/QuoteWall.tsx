@@ -8,6 +8,8 @@ type Recommendation = {
   role: string;
   /** Optional second line — games / context */
   credits?: string;
+  /** Optional supporting document (e.g., recommendation letter) */
+  letterUrl?: string;
 };
 
 const RECOMMENDATIONS: Recommendation[] = [
@@ -19,16 +21,12 @@ const RECOMMENDATIONS: Recommendation[] = [
     credits: 'Metro Exodus · Chernobylite',
   },
   {
-    quote: 'Julian solved several complex gameplay issues extremely quickly.',
-    role: 'Collaborator / Lead',
-  },
-  {
-    quote: 'Excellent debugging and replication skills.',
-    role: 'Collaborator / Lead',
-  },
-  {
-    quote: 'Strong systems thinking and clear communication.',
-    role: 'Collaborator / Lead',
+    quote:
+      'He took ownership of his work and could be trusted to follow through on the tasks assigned to him.',
+    name: 'David Van Pelt',
+    role: 'Technical Director — INGAME STUDIOS',
+    credits: 'Crime Boss: Rockay City',
+    letterUrl: '/recommendation-david-van-pelt.pdf',
   },
 ];
 
@@ -78,6 +76,25 @@ function QuoteCard({ item, index }: { item: Recommendation; index: number }) {
             <p className="text-xs font-mono text-gray-500 tracking-wide pt-0.5">{item.credits}</p>
           )}
         </div>
+        {item.letterUrl && (
+          <div className="mt-5 flex flex-wrap gap-2">
+            <a
+              href={item.letterUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/50 text-primary/90 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors rounded"
+            >
+              Read PDF
+            </a>
+            <a
+              href={item.letterUrl}
+              download
+              className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/30 text-gray-300 hover:border-primary/60 hover:text-white hover:bg-cyber-black/50 transition-colors rounded"
+            >
+              Download PDF
+            </a>
+          </div>
+        )}
       </div>
     </motion.div>
   );
@@ -109,7 +126,7 @@ export default function QuoteWall() {
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 max-w-7xl">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-6xl mx-auto">
           {RECOMMENDATIONS.map((item, index) => (
             <QuoteCard key={index} item={item} index={index} />
           ))}

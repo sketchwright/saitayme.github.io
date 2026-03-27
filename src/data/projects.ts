@@ -77,7 +77,7 @@ export const projects: Project[] = [
     title: 'Crime Boss Official Modkit',
     description: 'Contributed to the official Crime Boss modkit by refactoring gameplay systems to be Blueprint-extensible and DataTable-driven, enabling meaningful mod support without source code access.',
     shortDescription: 'Refactored gameplay for Blueprint/DataTable moddability; Rockay Rumble and custom boss support.',
-    thumbnail: '/projects/crimeboss.png',
+    thumbnail: '/projects/crimeboss-modkit.png',
     category: 'Unreal Engine',
     tags: ['Modding', 'Tools', 'Blueprint Architecture', 'Data-Driven Design'],
     projectType: 'Professional',
