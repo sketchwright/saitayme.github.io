@@ -20,6 +20,10 @@ const SKILLS = [
     bullets: ['GAS', 'Gameplay Tags', 'Abilities & items', 'Mission logic', 'Production debugging'],
   },
   {
+    label: 'Marketing',
+    bullets: ['Social media', 'Creator outreach', 'Livestreams', 'Trailer VO', 'Web'],
+  },
+  {
     label: 'Tools',
     bullets: ['Git', 'SVN', 'Perforce', 'Jira', 'Confluence'],
   },
@@ -55,10 +59,10 @@ export default function SkillAuthorityGrid() {
           transition={{ delay: 0.1 }}
           className="text-gray-400 font-mono text-sm mb-12"
         >
-          Programming, engines, multiplayer, and tools
+          Programming, engines, multiplayer, marketing and tools
         </motion.p>
         {/* Grid items have min-height so expanded cards don't push content below */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 ">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 ">
           {SKILLS.map((skill, idx) => (
             <motion.div
               key={skill.label}

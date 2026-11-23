@@ -3,10 +3,10 @@ import { motion, useInView } from 'framer-motion';
 
 const IMPACT_ITEMS = [
   { type: 'SHIPPED', value: 'Crime Boss: Rockay City' },
-  { type: 'MARKETING', value: 'Mayhem À La Carte × 505 Games' },
+  { type: 'MARKETING', value: 'Mayhem À La Carte' },
   { type: 'SHIPPED', value: 'NOK (Steam)' },
   { type: 'ENGINE', value: 'Unreal Engine' },
-  { type: 'SPECIALTY', value: 'Gameplay / Systems / Multiplayer' },
+  { type: 'SPECIALTY', value: 'Gameplay / Multiplayer' },
 ];
 
 const EMPHASIS_INTERVAL_MS = 5000;
