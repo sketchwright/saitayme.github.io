@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, useMotionValue } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import type { Project } from '@/data/projects';
 import { getProjectsBySection } from '@/data/projects';
@@ -73,7 +73,7 @@ export default function ProjectCarousel() {
   useInView(sectionRef, { once: true, amount: 0.1 });
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isHovering, setIsHovering] = useState(false);
-  const [scrollLeft, setScrollLeft] = useState(0);
+  const x = useMotionValue(0);
 
   const featured = getProjectsBySection(projects).featured.slice(0, 6);
   const cardWidth = 300;
@@ -88,16 +88,15 @@ export default function ProjectCarousel() {
       const dt = (now - last) / 1000;
       last = now;
       if (!CAROUSEL_PAUSE_ON_HOVER || !isHovering) {
-        setScrollLeft((s) => {
-          const next = s + DRIFT_PIXELS_PER_SEC * dt;
-          return next >= totalWidth ? next % totalWidth : next;
-        });
+        // Motion value: moves the strip without re-rendering React every frame.
+        const next = -x.get() + DRIFT_PIXELS_PER_SEC * dt;
+        x.set(-(next >= totalWidth ? next % totalWidth : next));
       }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isHovering, featured.length, totalWidth]);
+  }, [isHovering, featured.length, totalWidth, x]);
 
   return (
     <motion.section
@@ -139,7 +138,7 @@ export default function ProjectCarousel() {
             initial={false}
             style={{
               width: totalWidth * 3,
-              x: -scrollLeft,
+              x,
             }}
           >
             {[...featured, ...featured, ...featured].map((project, i) => (

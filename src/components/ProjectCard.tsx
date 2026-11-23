@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Project } from '../data/projects';
 import { DiUnitySmall } from 'react-icons/di';
 import { SiUnrealengine } from 'react-icons/si';
+import { MdCampaign } from 'react-icons/md';
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
   Professional: 'Professional',
@@ -34,7 +35,7 @@ const ProjectCard = ({
   featuredIdleActive = false,
   onHoverChange,
 }: ProjectCardProps) => {
-  const EngineIcon = project.category === 'Unity' ? DiUnitySmall : SiUnrealengine;
+  const EngineIcon = project.category === 'Unity' ? DiUnitySmall : project.category === 'Marketing' ? MdCampaign : SiUnrealengine;
   const summary = project.shortDescription ?? project.description;
   const impactPreview = project.impact?.slice(0, 2) ?? [];
   const impactDelayed = project.impact?.[2];

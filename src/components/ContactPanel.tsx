@@ -4,7 +4,7 @@ import { MdEmail, MdPhone, MdLocationOn, MdContentCopy, MdCheck } from 'react-ic
 const contact = {
   city: 'Brno, Czech Republic',
   email: 'julian.strunz@hotmail.com',
-  phone: '+43 664 9145420',
+  phone: '+420 734 611 353',
 };
 
 const iconGlowStyle: React.CSSProperties = {

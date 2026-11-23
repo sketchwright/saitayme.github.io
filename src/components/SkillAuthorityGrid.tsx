@@ -58,7 +58,7 @@ export default function SkillAuthorityGrid() {
           Programming, engines, multiplayer, and tools
         </motion.p>
         {/* Grid items have min-height so expanded cards don't push content below */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 [grid-auto-rows:minmax(220px,auto)]">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 ">
           {SKILLS.map((skill, idx) => (
             <motion.div
               key={skill.label}
@@ -66,7 +66,7 @@ export default function SkillAuthorityGrid() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: idx * 0.06 }}
-              className="min-h-[220px] flex flex-col"
+              className="flex flex-col"
             >
               <motion.div
                 className={`
@@ -84,12 +84,9 @@ export default function SkillAuthorityGrid() {
                 <h3 className="text-sm font-cyber text-primary uppercase tracking-wider">
                   {skill.label}
                 </h3>
-                {hovered === idx ? (
-                  <motion.ul
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.25 }}
-                    className="mt-3 space-y-1 text-gray-300 text-xs font-mono list-none"
+                {(
+                  <ul
+                    className={`mt-3 space-y-1 text-xs font-mono list-none transition-colors duration-300 ${hovered === idx ? 'text-gray-100' : 'text-gray-400'}`}
                   >
                     {skill.bullets.map((b) => (
                       <li key={b} className="flex items-center gap-1.5">
@@ -97,8 +94,8 @@ export default function SkillAuthorityGrid() {
                         {b}
                       </li>
                     ))}
-                  </motion.ul>
-                ) : null}
+                  </ul>
+                )}
               </motion.div>
             </motion.div>
           ))}

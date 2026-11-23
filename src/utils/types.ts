@@ -12,7 +12,7 @@ export type Project = {
   title: string;
   description: string;
   shortDescription?: string;
-  category: 'Unity' | 'Unreal Engine';
+  category: 'Unity' | 'Unreal Engine' | 'Marketing';
   thumbnail: string;
   tags: string[];
   projectType?: ProjectType;
