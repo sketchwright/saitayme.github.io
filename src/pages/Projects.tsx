@@ -9,7 +9,7 @@ import { Project } from '@/utils/types';
 import { projects, secretProjects, getProjectsBySection } from '../data/projects';
 import InteractiveBackground from '@/components/InteractiveBackground';
 
-function filterByCategory(list: Project[], category: 'all' | 'Unity' | 'Unreal Engine'): Project[] {
+function filterByCategory(list: Project[], category: 'all' | 'Unity' | 'Unreal Engine' | 'Marketing'): Project[] {
   if (category === 'all') return list;
   return list.filter((p) => p.category === category);
 }
@@ -17,7 +17,7 @@ function filterByCategory(list: Project[], category: 'all' | 'Unity' | 'Unreal E
 const FEATURED_IDLE_INTERVAL_MS = 4800;
 
 const Projects = () => {
-  const [selectedCategory, setSelectedCategory] = useState<'all' | 'Unity' | 'Unreal Engine'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'all' | 'Unity' | 'Unreal Engine' | 'Marketing'>('all');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [showSecretProjects, setShowSecretProjects] = useState(false);
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
@@ -89,10 +89,10 @@ const Projects = () => {
         </div>
 
         {/* Category filter */}
-        <div className="flex gap-4 mb-10">
+        <div className="flex flex-wrap gap-3 md:gap-4 mb-10">
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
+            className={`px-4 md:px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
               ${selectedCategory === 'all'
                 ? 'bg-primary text-cyber-black shadow-[0_0_15px_rgba(240,126,65,0.5)]'
                 : 'bg-cyber-black text-primary border-2 border-primary/30 hover:border-primary hover:shadow-[0_0_10px_rgba(240,126,65,0.3)]'
@@ -102,7 +102,7 @@ const Projects = () => {
           </button>
           <button
             onClick={() => setSelectedCategory('Unity')}
-            className={`px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
+            className={`px-4 md:px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
               ${selectedCategory === 'Unity'
                 ? 'bg-primary text-cyber-black shadow-[0_0_15px_rgba(240,126,65,0.5)]'
                 : 'bg-cyber-black text-primary border-2 border-primary/30 hover:border-primary hover:shadow-[0_0_10px_rgba(240,126,65,0.3)]'
@@ -112,13 +112,23 @@ const Projects = () => {
           </button>
           <button
             onClick={() => setSelectedCategory('Unreal Engine')}
-            className={`px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
+            className={`px-4 md:px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
               ${selectedCategory === 'Unreal Engine'
                 ? 'bg-primary text-cyber-black shadow-[0_0_15px_rgba(240,126,65,0.5)]'
                 : 'bg-cyber-black text-primary border-2 border-primary/30 hover:border-primary hover:shadow-[0_0_10px_rgba(240,126,65,0.3)]'
               }`}
           >
             Unreal Engine
+          </button>
+          <button
+            onClick={() => setSelectedCategory('Marketing')}
+            className={`px-4 md:px-6 py-2 rounded-md font-cyber text-sm transition-all duration-300
+              ${selectedCategory === 'Marketing'
+                ? 'bg-primary text-cyber-black shadow-[0_0_15px_rgba(240,126,65,0.5)]'
+                : 'bg-cyber-black text-primary border-2 border-primary/30 hover:border-primary hover:shadow-[0_0_10px_rgba(240,126,65,0.3)]'
+              }`}
+          >
+            Marketing
           </button>
         </div>
 

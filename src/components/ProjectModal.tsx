@@ -2,6 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Project } from '../data/projects';
 import { DiUnitySmall } from 'react-icons/di';
 import { SiUnrealengine } from 'react-icons/si';
+import { MdCampaign } from 'react-icons/md';
 
 const PROJECT_TYPE_LABELS: Record<string, string> = {
   Professional: 'Professional',
@@ -47,7 +48,7 @@ const itemVariants = {
 const ProjectModal = ({ project, onClose }: ProjectModalProps) => {
   if (!project) return null;
 
-  const EngineIcon = project.category === 'Unity' ? DiUnitySmall : SiUnrealengine;
+  const EngineIcon = project.category === 'Unity' ? DiUnitySmall : project.category === 'Marketing' ? MdCampaign : SiUnrealengine;
 
   return (
     <AnimatePresence>

@@ -4,8 +4,8 @@ import { motion } from 'framer-motion';
 
 const lines = [
   'Julian Strunz BSc',
-  'Gameplay Programmer — Multiplayer & networked gameplay (Unreal)',
-  'Skills: C++, C#, Blueprint · Unity, Unreal · Replication, JIP, EOS · Git, Perforce, Jira',
+  'Gameplay Programmer & Marketing Engineer — Unreal multiplayer, Mayhem À La Carte (505 Games)',
+  'Skills: C++, C#, Blueprint · Unity, Unreal · Replication, JIP, EOS · Social, creators, livestreams · Git, Perforce, Jira',
 ];
 
 const crtNoise = {

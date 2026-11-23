@@ -128,7 +128,7 @@ export default function ModkitShowcase() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, ease: 'easeOut' }}
-            className={`relative ${showTutorials ? '' : 'max-h-[260px] overflow-hidden rounded-lg'}`}
+            className={`relative ${showTutorials ? '' : 'max-h-[214px] md:max-h-[260px] overflow-hidden rounded-lg'}`}
           >
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {TUTORIAL_VIDEOS.map((video, idx) => (

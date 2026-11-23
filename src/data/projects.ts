@@ -13,7 +13,7 @@ export interface Project {
   description: string;
   shortDescription?: string;
   thumbnail: string;
-  category: 'Unity' | 'Unreal Engine';
+  category: 'Unity' | 'Unreal Engine' | 'Marketing';
   tags: string[];
   projectType?: ProjectType;
   role?: string;
@@ -31,6 +31,65 @@ export interface Project {
 
 export const projects: Project[] = [
   // —— Tier 1: Featured / Professional ——
+  {
+    id: 'mayhem-a-la-carte',
+    title: 'Mayhem À La Carte',
+    description: 'Marketing Engineer for Mayhem À La Carte, Ingame Studios’ next game, published by 505 Games. I own the social media strategy and channels, worked on the reveal campaign, run creator outreach, built mayhemalacarte.com and voiced part of the trailer. Started because my ModKit tutorials and livestreams worked, so the studio moved me into marketing full time.',
+    shortDescription: 'Marketing for Ingame’s next game with 505 Games: reveal, social, creators, website.',
+    thumbnail: '/projects/mayhem-a-la-carte.jpg',
+    category: 'Marketing',
+    tags: ['Game Marketing', 'Social Media', 'Creator Outreach', 'Web', 'Trailer VO'],
+    projectType: 'Professional',
+    role: 'Marketing Engineer',
+    company: 'Ingame Studios × 505 Games',
+    timeframe: '2026–now',
+    featured: true,
+    priority: 1.5,
+    impact: [
+      'Own social media strategy and channels',
+      'Reveal campaign with the publisher',
+      'Built mayhemalacarte.com, voiced part of the trailer',
+      'Represented Ingame at gamescom 2026 and VGDM #98 Vienna',
+    ],
+    demoUrl: 'https://mayhemalacarte.com/',
+    systems: [
+      {
+        name: 'Launch & Community Marketing',
+        description: 'Day-to-day marketing for a PC/console game with a publisher partner.',
+        techStack: ['Social platforms', 'Creator outreach', 'Web', 'Livestreams'],
+        features: ['Reveal campaign', 'Social calendar', 'Creator outreach', 'Game website', 'Trailer voice-over', 'Events'],
+      },
+    ],
+  },
+  {
+    id: 'network-session-kit',
+    title: 'Network Session Kit',
+    description: 'My Unreal Engine 5 plugin for sessions and lobbies on Online Subsystem v2, written for our team game Nobody Move. Version 2.0, designed and maintained by me.',
+    shortDescription: 'UE5 plugin for sessions and lobbies (OSSv2), powering Nobody Move.',
+    thumbnail: '/projects/network-session-kit.jpg',
+    category: 'Unreal Engine',
+    tags: ['Multiplayer', 'Plugin', 'Online Subsystem', 'C++'],
+    projectType: 'Tool',
+    role: 'Author',
+    company: 'Nobody Move (team project)',
+    timeframe: '2026',
+    featured: true,
+    priority: 3.5,
+    impact: [
+      'Sessions and lobbies on Online Subsystem v2',
+      'Version 2.0, written solo',
+      'Runs the multiplayer in Nobody Move',
+    ],
+    demoUrl: 'https://store.steampowered.com/app/5592510/',
+    systems: [
+      {
+        name: 'Session & Lobby Plugin',
+        description: 'Reusable plugin that wraps OSSv2 session and lobby flows.',
+        techStack: ['Unreal Engine 5', 'C++', 'Online Subsystem v2'],
+        features: ['Session create / find / join', 'Lobbies', 'Drop-in plugin'],
+      },
+    ],
+  },
   {
     id: 'crime-boss-rockay-city',
     title: 'Crime Boss: Rockay City',
