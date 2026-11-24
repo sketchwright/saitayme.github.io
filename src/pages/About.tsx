@@ -405,10 +405,9 @@ const About = () => {
             {/* Signature: one-time scan sweep */}
             <motion.div
               className="absolute left-0 right-0 h-0.5 bg-gradient-to-b from-transparent via-primary/50 to-transparent z-10 pointer-events-none"
-              initial={{ y: 0 }}
-              animate={{ y: 420 }}
+              initial={{ top: '0%', opacity: 0 }}
+              animate={{ top: ['0%', '100%'], opacity: [0, 1, 1, 0] }}
               transition={{ duration: 1.1, ease: 'easeInOut', delay: 0.25 }}
-              style={{ top: 0 }}
             />
             {/* Animated top bar (activation) */}
             <motion.div
