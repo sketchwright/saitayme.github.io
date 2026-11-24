@@ -216,7 +216,6 @@ SECURITY: MAXIMUM
 -------------
 NAME: JULIAN STRUNZ
 ROLE: GAMEPLAY PROGRAMMER // MARKETING ENGINEER
-PUBLISHER LINK: 505 GAMES
 STATUS: ACTIVE
 
 > NEURAL INTERFACE STABILIZED
@@ -452,7 +451,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
               className="text-gray-400 max-w-2xl mx-auto px-4 text-lg font-mono"
             >
               Unreal multiplayer and gameplay on Crime Boss: Rockay City.
-              Now running marketing for Mayhem À La Carte with 505 Games.
+              Now running marketing for Mayhem À La Carte at Ingame Studios.
               I build games, then I get people to play them.
             </motion.p>
 

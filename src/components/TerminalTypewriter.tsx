@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 
 const lines = [
   'Julian Strunz BSc',
-  'Gameplay Programmer & Marketing Engineer — Unreal multiplayer, Mayhem À La Carte (505 Games)',
+  'Gameplay Programmer & Marketing Engineer — Unreal multiplayer, Mayhem À La Carte at Ingame Studios',
   'Skills: C++, C#, Blueprint · Unity, Unreal · Replication, JIP, EOS · Social, creators, livestreams · Git, Perforce, Jira',
 ];
 
