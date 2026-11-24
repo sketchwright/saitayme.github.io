@@ -134,7 +134,7 @@ const SECTION_SPACE = 'mb-20 md:mb-28';
 
 /** Hero: one-line value proposition */
 const VALUE_PROP =
-  'Unreal gameplay & multiplayer programmer who now runs game marketing — Crime Boss: Rockay City, the official ModKit, and Mayhem À La Carte with 505 Games.';
+  'Unreal gameplay & multiplayer programmer who now runs game marketing — Crime Boss: Rockay City, the official ModKit, and Mayhem À La Carte at Ingame Studios.';
 
 /** High-signal tech/project chips for hero */
 const HERO_CHIPS = [
@@ -142,18 +142,18 @@ const HERO_CHIPS = [
   'Crime Boss: Rockay City',
   'Multiplayer / EOS',
   'Blueprint & C++',
-  'Game Marketing / 505 Games',
+  'Game Marketing',
   'Unity / Tools',
 ];
 /** Chips that get subtle loop emphasis (priority proof signals) */
-const CHIP_PRIORITY = new Set(['Unreal Engine', 'Crime Boss: Rockay City', 'Multiplayer / EOS', 'Blueprint & C++', 'Game Marketing / 505 Games', 'Unity / Tools']);
+const CHIP_PRIORITY = new Set(['Unreal Engine', 'Crime Boss: Rockay City', 'Multiplayer / EOS', 'Blueprint & C++', 'Game Marketing', 'Unity / Tools']);
 
 /** Career highlight cards: skimmable, bullet-led (matches CV experience) */
 const CAREER_HIGHLIGHTS = [
   {
     title: 'Ingame Studios',
     subtitle: 'Marketing Engineer · Oct 2026 – Present',
-    project: 'Mayhem À La Carte × 505 Games',
+    project: 'Mayhem À La Carte',
     companyUrl: 'https://mayhemalacarte.com/',
     bullets: [
       'Own social media strategy and channels',
@@ -199,7 +199,7 @@ const CAREER_HIGHLIGHTS = [
 
 /** About / typewriter paragraph: CV tagline + filler so the profile box feels full */
 const ABOUT_SUMMARY =
-  'Gameplay Programmer specializing in multiplayer systems and networked gameplay in Unreal Engine, experienced with replication, Join-In-Progress, and Epic Online Services on a shipped commercial title. I also fix the bugs that make you alt-tab to the wiki at 2 a.m. I shipped fixes on Crime Boss: Rockay City at Ingame Studios and built the Modkit so people can add custom bosses and mod Rockay Rumble. Then my Modkit tutorials and livestreams turned into a second job: now I run marketing for Mayhem À La Carte with 505 Games, from the reveal to creators to the website. I used to do sound and editor tools at nerdmonkeys on Unity stuff. I like code that reads clean and multiplayer that does not desync.';
+  'Gameplay Programmer specializing in multiplayer systems and networked gameplay in Unreal Engine, experienced with replication, Join-In-Progress, and Epic Online Services on a shipped commercial title. I also fix the bugs that make you alt-tab to the wiki at 2 a.m. I shipped fixes on Crime Boss: Rockay City at Ingame Studios and built the Modkit so people can add custom bosses and mod Rockay Rumble. Then my Modkit tutorials and livestreams turned into a second job: now I run marketing for Mayhem À La Carte, Ingame’s next game, from the reveal to creators to the website. I used to do sound and editor tools at nerdmonkeys on Unity stuff. I like code that reads clean and multiplayer that does not desync.';
 
 /** Core strengths: 6 categories. Card = minimal teaser; detail panel = in-depth (different content). */
 const CORE_STRENGTHS = [
