@@ -275,7 +275,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
                 <GlitchText delay={contentDelays.glitch} initialReveal={!hasSeenBoot}>Julian Strunz</GlitchText>
                 <div className="h-4 md:h-12" />
                 <div className="flex flex-col items-center justify-center space-y-4">
-                  <div className="text-[#fcee0a] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
+                  <div className="text-[#f4efe8] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
                     <TerminalText delay={contentDelays.terminal}>{`> MARKETING ENGINEER // GAMEPLAY PROGRAMMER_`}</TerminalText>
                   </div>
                 </div>
@@ -322,18 +322,18 @@ const Home = ({ onPlayGame }: HomeProps) => {
 
               <motion.button
                 onClick={onPlayGame}
-                className="cyber-button-game group relative"
+                className="group relative px-5 py-2.5 font-mono text-xs tracking-[0.3em] uppercase text-primary border border-primary/40 hover:bg-primary hover:text-black transition-colors"
                 variants={gameButtonVariants}
                 initial="initial"
                 animate="animate"
                 whileHover="hover"
               >
-                <span className="relative z-10 flex items-center">
-                  <span className="mr-2">🎮</span>
+                <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-primary" />
+                <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-primary" />
+                <span className="relative flex items-center gap-2">
+                  <span className="inline-block w-1.5 h-1.5 bg-primary group-hover:bg-black animate-pulse" />
                   Play Cyber Defender
-                  <span className="ml-2 text-sm opacity-70">[New!]</span>
                 </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-primary/10 group-hover:opacity-100 opacity-0 transition-opacity duration-300" />
               </motion.button>
             </motion.div>
           </motion.div>

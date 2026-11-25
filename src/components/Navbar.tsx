@@ -63,6 +63,14 @@ const Navbar = () => {
                 {link.label}
               </Link>
             ))}
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event('open-cyber-defender'))}
+              className="font-mono text-[11px] tracking-[0.25em] uppercase text-primary/80 border border-primary/30 px-2.5 py-1 hover:text-black hover:bg-primary transition-colors"
+              aria-label="Play Cyber Defender"
+            >
+              ▸ Play
+            </button>
           </div>
 
           {/* Mobile Menu Button */}
@@ -100,6 +108,13 @@ const Navbar = () => {
                     {link.label}
                   </Link>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => { setIsOpen(false); window.dispatchEvent(new Event('open-cyber-defender')); }}
+                  className="text-left font-mono text-xs tracking-[0.25em] uppercase px-4 py-2 text-primary border border-primary/30"
+                >
+                  ▸ Play Cyber Defender
+                </button>
               </div>
             </div>
           </motion.div>

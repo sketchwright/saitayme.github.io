@@ -34,8 +34,13 @@ const App = () => {
       }
     };
 
+    const openGame = () => setShowGame(true);
     window.addEventListener('keydown', keyHandler);
-    return () => window.removeEventListener('keydown', keyHandler);
+    window.addEventListener('open-cyber-defender', openGame);
+    return () => {
+      window.removeEventListener('keydown', keyHandler);
+      window.removeEventListener('open-cyber-defender', openGame);
+    };
   }, []);
 
   useEffect(() => {
