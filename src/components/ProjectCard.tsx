@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useSpring } from 'framer-motion';
 import { Project } from '../data/projects';
 import { DiUnitySmall } from 'react-icons/di';
 import { SiUnrealengine } from 'react-icons/si';
@@ -39,7 +39,7 @@ const ProjectCard = ({
   const summary = project.shortDescription ?? project.description;
   const impactPreview = project.impact?.slice(0, 2) ?? [];
   const impactDelayed = project.impact?.[2];
-  const isLogoThumb = /ingame-studios|nerd-monkeys/.test(project.thumbnail);
+  const isLogoThumb = /ingame-studios|nerd-monkeys|mayhem\/logo/.test(project.thumbnail);
   const [showDelayedReward, setShowDelayedReward] = useState(false);
   const [sweepPlayed, setSweepPlayed] = useState(false);
   const delayedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -49,7 +49,25 @@ const ProjectCard = ({
     delayedTimerRef.current = setTimeout(() => setShowDelayedReward(true), DELAYED_HOVER_MS);
   };
 
+  // Holo tilt + cursor spotlight
+  const cardRef = useRef<HTMLDivElement>(null);
+  const tiltX = useSpring(0, { stiffness: 220, damping: 20 });
+  const tiltY = useSpring(0, { stiffness: 220, damping: 20 });
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = cardRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const px = (e.clientX - r.left) / r.width;
+    const py = (e.clientY - r.top) / r.height;
+    el.style.setProperty('--mx', `${px * 100}%`);
+    el.style.setProperty('--my', `${py * 100}%`);
+    tiltX.set((0.5 - py) * 7);
+    tiltY.set((px - 0.5) * 9);
+  };
+
   const handleMouseLeave = () => {
+    tiltX.set(0);
+    tiltY.set(0);
     onHoverChange?.(false);
     if (delayedTimerRef.current) {
       clearTimeout(delayedTimerRef.current);
@@ -77,10 +95,19 @@ const ProjectCard = ({
         ${featuredIdleActive ? 'project-card-idle-active' : ''}
         ${isSpotlight ? 'border-2 border-primary/60 bg-cyber-black/95' : 'border-2 border-primary/30 bg-cyber-black'}
       `}
+      ref={cardRef}
+      style={{ rotateX: tiltX, rotateY: tiltY, transformPerspective: 900 }}
       onClick={onClick}
       onMouseEnter={handleMouseEnter}
+      onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Cursor-follow holo spotlight */}
+      <div
+        className="absolute inset-0 z-30 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300 mix-blend-screen"
+        style={{ background: 'radial-gradient(420px circle at var(--mx, 50%) var(--my, 50%), rgba(240,126,65,0.16), transparent 45%)' }}
+        aria-hidden
+      />
       {/* Thumbnail: image inset by 2px so a solid bg frame hides any seam during zoom; zoom stays inside that frame */}
       <div className="relative aspect-video overflow-hidden rounded-t-lg bg-cyber-black shrink-0 isolate">
         <div className="absolute -inset-2 bg-cyber-black pointer-events-none" aria-hidden />

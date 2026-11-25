@@ -37,8 +37,8 @@ export const projects: Project[] = [
   {
     id: 'mayhem-a-la-carte',
     title: 'Mayhem À La Carte',
-    description: 'Marketing Engineer for Mayhem À La Carte, Ingame Studios’ next game, published by 505 Games. I own the social media strategy and channels, worked on the reveal campaign, run creator outreach, built mayhemalacarte.com and voiced part of the trailer. Started because my ModKit tutorials and livestreams worked, so the studio moved me into marketing full time.',
-    shortDescription: 'Marketing for Ingame Studios’ next game: reveal, social, creators, website.',
+    description: 'Marketing Engineer for Mayhem À La Carte, Ingame Studios’ co-op cooking shooter, published by 505 Games. I own the social media strategy and channels, worked on the reveal campaign, run creator outreach on a tool I built for it (IGS Outreach), built mayhemalacarte.com, host livestreams on Twitch and YouTube and voiced part of the trailer. It started because my ModKit tutorials and streams worked, so the studio moved me into marketing full time.',
+    shortDescription: 'Marketing for Ingame Studios’ co-op cooking shooter: reveal, social, creators, streams, website.',
     thumbnail: '/projects/mayhem/key-art.jpg',
     thumbnailPosition: 'left center',
     gallery: [
@@ -73,25 +73,183 @@ export const projects: Project[] = [
     ],
   },
   {
+    id: 'igs-outreach',
+    title: 'IGS Outreach',
+    description: 'A creator-outreach platform I designed and built for Ingame Studios. Every streamer and YouTuber we work with lives in one searchable database that hydrates itself daily from the Twitch and YouTube APIs, so follower counts and stats are always current. It plugs into Outlook through Microsoft Entra: it sends personalised HTML mail campaigns with tokens and multiple copy variants, throttles sends in irregular steps with per-minute, hour and day caps to stay out of spam folders, detects replies and asks you to rate them. After a campaign it asks what the creator actually made and stores the links, and that feedback powers recommendations for similar creators.',
+    shortDescription: 'Influencer CRM + mail engine: live Twitch/YouTube data, throttled personalised campaigns, reply tracking, recommendations.',
+    thumbnail: '/projects/igs-outreach.svg',
+    category: 'Marketing',
+    tags: ['Marketing Engineering', 'Twitch API', 'YouTube API', 'Microsoft Graph', 'Full-stack'],
+    projectType: 'Tool',
+    role: 'Marketing Engineer',
+    company: 'Ingame Studios',
+    timeframe: '2026',
+    featured: true,
+    priority: 2.5,
+    impact: [
+      'Whole creator pipeline in one tool: find, mail, follow up, measure',
+      'Data re-hydrated daily from Twitch and YouTube APIs',
+      'Throttled, personalised sends that stay out of spam',
+    ],
+    challenges: [
+      'Deliverability: irregular throttling, rate caps and copy variants',
+      'Keeping thousands of creator profiles fresh without hitting API quotas',
+      'Turning campaign feedback into useful recommendations',
+    ],
+    systems: [
+      {
+        name: 'Creator Database & Search',
+        description: 'Tagged creator profiles with live platform stats and a filter system built for campaign briefs ("~5k Twitch followers, streams co-op games").',
+        techStack: ['Twitch API', 'YouTube Data API', 'Scheduled hydration job'],
+        features: ['Tags & advanced filters', 'Daily stat hydration', 'Good/bad collaboration flags', 'Similar-creator recommendations'],
+      },
+      {
+        name: 'Campaign Mailer',
+        description: 'Outlook-connected mail engine for personalised outreach at scale.',
+        techStack: ['Microsoft Graph / Entra', 'HTML + CSS email', 'Token templating'],
+        features: ['Tokens ({name}, {handle}, …)', 'Multiple copy variants per campaign', 'Irregular throttling + rate caps', 'Reply detection & in-app replies'],
+      },
+      {
+        name: 'Follow-up & Analytics',
+        description: 'Closes the loop after every campaign.',
+        techStack: ['Analytics', 'Feedback prompts'],
+        features: ['Response rates', 'Positive/negative reply tagging', 'Post-campaign content links + ratings', 'Follow-up reminders'],
+      },
+    ],
+  },
+  {
+    id: 'mayhem-recipe-pipeline',
+    title: 'Recipe Data Pipeline',
+    description: 'In Mayhem À La Carte every dish is a chain of steps: bun, bun + patty, bun + patty + tomato, and so on. Design keeps all recipes in a Confluence table. I built the Unreal tooling that takes the exported CSV and generates the recipe data assets, including every intermediate step, with one click. The game’s whole cooking logic runs on the assets this pipeline creates.',
+    shortDescription: 'One-click CSV → Unreal recipe assets, generating every intermediate cooking step automatically.',
+    thumbnail: '/projects/mayhem/shot-03.jpg',
+    category: 'Unreal Engine',
+    tags: ['Tools', 'Data Pipeline', 'Data Assets', 'C++', 'Editor Scripting'],
+    projectType: 'Professional',
+    role: 'Tools Programmer',
+    company: 'Ingame Studios · Mayhem À La Carte',
+    timeframe: '2026',
+    featured: true,
+    priority: 3.2,
+    impact: [
+      'Recipe import went from manual work to one button',
+      'Generates every intermediate step automatically',
+      'The cooking gameplay runs on its data assets',
+    ],
+    challenges: [
+      'Deriving the full step graph from a flat design table',
+      'Re-imports that update assets without breaking references',
+    ],
+    demoUrl: 'https://mayhemalacarte.com/',
+    systems: [
+      {
+        name: 'CSV → Recipe Asset Importer',
+        description: 'Editor tool that turns the design team’s recipe table into gameplay-ready data assets.',
+        techStack: ['Unreal Engine 5', 'C++', 'Data Assets', 'CSV'],
+        features: ['One-click import', 'Automatic intermediate steps', 'Safe re-import', 'Designer-owned source of truth'],
+      },
+    ],
+  },
+  {
+    id: 'mayhem-website',
+    title: 'mayhemalacarte.com',
+    description: 'Designed and built the official website for Mayhem À La Carte: the game’s home on the web for the reveal, wishlists, media and newsletter, kept in the game’s own visual language.',
+    shortDescription: 'The official game website, designed and built by me.',
+    thumbnail: '/projects/mayhem/hero.jpg',
+    thumbnailPosition: 'center right',
+    category: 'Marketing',
+    tags: ['Web', 'Game Marketing', 'Frontend', 'Wishlists'],
+    projectType: 'Professional',
+    role: 'Marketing Engineer',
+    company: 'Ingame Studios',
+    timeframe: '2026',
+    priority: 7,
+    impact: ['Official home of the game online', 'Built for the reveal campaign'],
+    demoUrl: 'https://mayhemalacarte.com/',
+    systems: [
+      {
+        name: 'Game Website',
+        description: 'Responsive marketing site for a PC game reveal.',
+        techStack: ['Web', 'Frontend'],
+        features: ['Reveal landing page', 'Wishlist calls to action', 'Media and key art'],
+      },
+    ],
+  },
+  {
+    id: 'agentic-marketing',
+    title: 'Agentic Content Pipeline',
+    description: 'An AI-assisted content workflow I built with Claude: it transcribes multi-hour livestreams, samples frames every few seconds, and finds the strongest moments from what is said and what is on screen. I review the picks in a queue; approved clips get platform-specific copy written and are scheduled and posted automatically. The human directs and reviews, the pipeline does the grind.',
+    shortDescription: 'Stream → clips → copy → scheduled posts. AI does the grind, a human approves every step.',
+    thumbnail: '/projects/agentic-pipeline.svg',
+    category: 'Marketing',
+    tags: ['AI Agents', 'Automation', 'Speech-to-text', 'Social Media'],
+    projectType: 'Tool',
+    role: 'Marketing Engineer',
+    timeframe: '2026',
+    priority: 7.5,
+    impact: [
+      '5-hour stream to a clip shortlist without scrubbing footage',
+      'Per-platform copy and scheduling on approval',
+      'Human-in-the-loop review queue',
+    ],
+    systems: [
+      {
+        name: 'Clip Finder',
+        description: 'Transcript + frame analysis to surface highlight moments.',
+        techStack: ['Claude', 'Speech-to-text', 'Frame sampling'],
+        features: ['Moment detection from speech and visuals', 'Review queue (accept / reject)', 'Auto-cut clips'],
+      },
+      {
+        name: 'Copy & Scheduler',
+        description: 'Writes platform-specific posts and schedules them.',
+        techStack: ['Claude', 'Social platform APIs'],
+        features: ['Copy per platform', 'Scheduling', 'Auto-posting after approval'],
+      },
+    ],
+  },
+  {
+    id: 'modkit-docs',
+    title: 'Crime Boss ModKit Docs',
+    description: 'Built and wrote the public documentation site for the official Crime Boss: Rockay City ModKit: guides for missions, teammates and bosses, Rockay Rumble maps and equipment, linked to my tutorial video series.',
+    shortDescription: 'The public ModKit documentation site, plus the tutorial series it links to.',
+    thumbnail: '/projects/crimeboss-modkit.png',
+    category: 'Marketing',
+    tags: ['Docs', 'Community', 'Modding', 'Web'],
+    projectType: 'Professional',
+    role: 'Author',
+    company: 'Ingame Studios',
+    timeframe: '2025–2026',
+    priority: 8,
+    impact: ['Public modding guide for the ModKit', 'Paired with 11+ tutorial videos'],
+    demoUrl: 'https://igstudios.atlassian.net/wiki/spaces/CBMK',
+    systems: [
+      {
+        name: 'ModKit Documentation',
+        description: 'Step-by-step guides for modders without source access.',
+        techStack: ['Confluence', 'Video tutorials'],
+        features: ['Mission creation', 'Custom bosses & teammates', 'Rockay Rumble maps', 'Weapons & skins'],
+      },
+    ],
+  },
+  {
     id: 'network-session-kit',
     title: 'Network Session Kit',
-    description: 'My Unreal Engine 5 plugin for sessions and lobbies on Online Subsystem v2, written for our team game Nobody Move. Version 2.0, designed and maintained by me.',
-    shortDescription: 'UE5 plugin for sessions and lobbies (OSSv2), powering Nobody Move.',
+    description: 'My own Unreal Engine 5 plugin for sessions and lobbies on Online Subsystem v2. A drop-in layer that turns the async OSSv2 session flow into a few clean Blueprint and C++ calls. Version 2.0, designed, written and maintained by me.',
+    shortDescription: 'My UE5 plugin for sessions and lobbies on Online Subsystem v2. Drop-in, Blueprint-friendly.',
     thumbnail: '/projects/network-session-kit.jpg',
     category: 'Unreal Engine',
     tags: ['Multiplayer', 'Plugin', 'Online Subsystem', 'C++'],
     projectType: 'Tool',
     role: 'Author',
-    company: 'Nobody Move (team project)',
+    company: 'Own plugin',
     timeframe: '2026',
     featured: true,
-    priority: 3.5,
+    priority: 3.6,
     impact: [
       'Sessions and lobbies on Online Subsystem v2',
       'Version 2.0, written solo',
-      'Runs the multiplayer in Nobody Move',
+      'Blueprint + C++ API, drop-in for any UE5 project',
     ],
-    demoUrl: 'https://store.steampowered.com/app/5592510/',
     systems: [
       {
         name: 'Session & Lobby Plugin',
@@ -186,20 +344,20 @@ export const projects: Project[] = [
   {
     id: 'unreal-multiplayer-framework',
     title: 'Unreal Multiplayer Framework',
-    description: 'Designed and implemented a reusable multiplayer subsystem built on EOS, simplifying session creation, lobby flow, and dedicated server workflows in Unreal.',
-    shortDescription: 'Reusable EOS-based subsystem for sessions, lobbies, and dedicated server flows.',
-    thumbnail: '/projects/ingame-studios.png',
+    description: 'Designed and implemented the reusable multiplayer subsystem behind Mayhem À La Carte’s 4-player co-op, built on EOS. It wraps session creation, lobby flow, player registration and dedicated server workflows into gameplay-facing Unreal subsystems.',
+    shortDescription: 'The EOS multiplayer subsystem behind Mayhem À La Carte’s co-op: sessions, lobbies, dedicated servers.',
+    thumbnail: '/projects/mayhem/shot-04.jpg',
     category: 'Unreal Engine',
     tags: ['Multiplayer', 'EOS', 'Networking', 'Subsystems', 'C++'],
     projectType: 'Professional',
     role: 'Systems Programmer',
-    company: 'Ingame Studios',
+    company: 'Ingame Studios · Mayhem À La Carte',
     timeframe: '2025–2026',
     featured: true,
     priority: 3,
     impact: [
-      'Built reusable framework on top of EOS',
-      'Unified session and lobby workflows',
+      'Multiplayer backbone of Mayhem À La Carte’s co-op',
+      'Unified session and lobby workflows on EOS',
       'Supported dedicated server hosting flows',
     ],
     challenges: [
@@ -207,7 +365,7 @@ export const projects: Project[] = [
       'Handling async/session lifecycle behavior',
       'Designing one-size-fits-all multiplayer architecture',
     ],
-    demoUrl: 'https://store.steampowered.com/app/2933080/Crime_Boss_Rockay_City/',
+    demoUrl: 'https://mayhemalacarte.com/',
     systems: [
       {
         name: 'Session & Lobby Framework',
@@ -298,7 +456,7 @@ export const projects: Project[] = [
   // —— Professional tools / Nerd Monkeys era ——
   {
     id: 'scene-loader',
-    priority: 6,
+    priority: 8.5,
     title: 'Advanced Scene Loader',
     description: 'Built a reusable Unity scene loading system with asynchronous loading, object pooling, and progress tracking to support smoother transitions and more controlled memory usage. Part of BaboonWorks.',
     shortDescription: 'Async loading, pooling, and progress tracking for smoother level transitions.',
@@ -570,8 +728,8 @@ export function getProjectsBySection(projectList: Project[]): {
   const additional: Project[] = [];
   for (const p of sorted) {
     const pri = p.priority ?? DEFAULT_PRIORITY;
-    if (pri >= 1 && pri <= 6) featured.push(p);
-    else if (pri >= 7 && pri <= 9) professional.push(p);
+    if (pri < 7) featured.push(p);
+    else if (pri < 10) professional.push(p);
     else additional.push(p);
   }
   return { featured, professional, additional };

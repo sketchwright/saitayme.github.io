@@ -36,7 +36,9 @@ function CarouselCard({ project, index }: { project: Project; index: number }) {
             <img
               src={project.thumbnail}
               alt={project.title}
-              className="w-full h-full object-cover"
+              className={`w-full h-full ${/mayhem\/logo|ingame-studios|nerd-monkeys/.test(project.thumbnail) ? 'object-contain p-6' : 'object-cover'}`}
+              style={{ objectPosition: project.thumbnailPosition }}
+              loading="lazy"
             />
           </motion.div>
           <div className="absolute inset-0 bg-gradient-to-t from-cyber-black via-transparent to-transparent opacity-80" />
@@ -123,7 +125,7 @@ export default function ProjectCarousel() {
           transition={{ delay: 0.1 }}
           className="text-gray-400 font-mono text-sm mt-2"
         >
-          Shipped titles and production systems
+          Shipped games, marketing tools and production systems
         </motion.p>
       </div>
       <div className="cyber-container">

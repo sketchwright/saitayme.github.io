@@ -1,101 +1,14 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion, useInView, animate } from 'framer-motion';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { FaUser, FaGraduationCap, FaAddressCard, FaCheck } from 'react-icons/fa';
 import Section from '@/components/Section';
 import ContactPanel from '@/components/ContactPanel';
 import LanguageChip from '@/components/LanguageChip';
 import InteractiveBackground from '@/components/InteractiveBackground';
-
-/** Phrases to highlight in profile text (order: longest first to avoid partial matches) */
-const PROFILE_HIGHLIGHT_PHRASES = [
-  'Crime Boss: Rockay City',
-  'Ingame Studios',
-  'nerdmonkeys',
-  'Unreal Engine',
-  'Epic Online Services',
-  'Join-In-Progress',
-  'Crime Boss Modkit',
-  'Rockay Rumble',
-];
-
-/** Splits text by phrases and returns segments; matching segments get highlight class. Uses earliest occurrence so "Ingame Studios" is highlighted before "Crime Boss" when both appear. */
-function profileWithHighlights(displayed: string): (string | { phrase: string })[] {
-  if (!displayed) return [];
-  const segments: (string | { phrase: string })[] = [];
-  let remaining = displayed;
-  while (remaining.length > 0) {
-    let bestIndex = remaining.length;
-    let bestPhrase: string | null = null;
-    for (const phrase of PROFILE_HIGHLIGHT_PHRASES) {
-      const i = remaining.indexOf(phrase);
-      if (i !== -1 && i < bestIndex) {
-        bestIndex = i;
-        bestPhrase = phrase;
-      }
-    }
-    if (bestPhrase === null) {
-      segments.push(remaining);
-      break;
-    }
-    if (bestIndex > 0) segments.push(remaining.slice(0, bestIndex));
-    segments.push({ phrase: bestPhrase });
-    remaining = remaining.slice(bestIndex + bestPhrase.length);
-  }
-  return segments;
-}
-
-/** Typewriter: word-by-word, fixed height, terminal cursor always on, orange highlights (colors via .profile-typewriter in CSS) */
-const TYPEWRITER_WORD_MS = 55;
-const TypewriterProfile = ({ text }: { text: string }) => {
-  const words = text.split(' ');
-  const [wordIndex, setWordIndex] = useState(0);
-  const [hasStarted, setHasStarted] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([e]) => {
-        if (e.isIntersecting && !hasStarted) setHasStarted(true);
-      },
-      { threshold: 0.2, rootMargin: '-20px' }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, [hasStarted]);
-
-  useEffect(() => {
-    if (!hasStarted || wordIndex >= words.length) return;
-    const t = setInterval(() => {
-      setWordIndex((n) => Math.min(n + 1, words.length));
-    }, TYPEWRITER_WORD_MS);
-    return () => clearInterval(t);
-  }, [hasStarted, wordIndex, words.length]);
-
-  const displayed = words.slice(0, wordIndex).join(' ');
-  const segments = profileWithHighlights(displayed);
-
-  return (
-    <div ref={ref} className="profile-typewriter min-h-[12rem] sm:min-h-[14rem] md:min-h-[16rem] text-sm sm:text-base md:text-[1.05rem] leading-[1.75] min-w-0 overflow-hidden break-words">
-      <span className="break-words">
-        {segments.map((seg, i) =>
-          typeof seg === 'string' ? (
-            <span key={`t-${i}`} data-profile-segment="normal">{seg}</span>
-          ) : (
-            <span key={`p-${i}-${seg.phrase}`} className="profile-highlight" data-profile-segment="highlight" style={{ color: '#f07e41', fontWeight: 500 }}>{seg.phrase}</span>
-          )
-        )}
-      </span>
-      <span
-        className="typer-cursor inline-block w-[3px] h-4 align-middle bg-primary ml-0.5 rounded-none"
-        style={{ boxShadow: '0 0 0 1px rgba(240,126,65,0.4)' }}
-        aria-hidden
-      />
-    </div>
-  );
-};
+import SkillReactor from '@/components/SkillReactor';
+import CareerTimeline from '@/components/CareerTimeline';
+import ScrambleText from '@/components/ScrambleText';
 
 const fadeIn = {
   initial: { opacity: 0, y: 12 },
@@ -134,19 +47,19 @@ const SECTION_SPACE = 'mb-20 md:mb-28';
 
 /** Hero: one-line value proposition */
 const VALUE_PROP =
-  'Unreal gameplay & multiplayer programmer who now runs game marketing — Crime Boss: Rockay City, the official ModKit, and Mayhem À La Carte at Ingame Studios.';
+  'Marketing engineer at Ingame Studios: I run marketing for Mayhem À La Carte and build the tools behind it, from creator outreach software to AI content pipelines. Before that I shipped gameplay and multiplayer code on Crime Boss: Rockay City, and I still write the code.';
 
-/** High-signal tech/project chips for hero */
+/** High-signal chips for hero (marketing first, engineering second) */
 const HERO_CHIPS = [
-  'Unreal Engine',
-  'Crime Boss: Rockay City',
-  'Multiplayer / EOS',
-  'Blueprint & C++',
   'Game Marketing',
-  'Unity / Tools',
+  'Creator Outreach',
+  'Marketing Automation',
+  'Unreal Engine',
+  'Multiplayer / EOS',
+  'C++ & Blueprint',
 ];
 /** Chips that get subtle loop emphasis (priority proof signals) */
-const CHIP_PRIORITY = new Set(['Unreal Engine', 'Crime Boss: Rockay City', 'Multiplayer / EOS', 'Blueprint & C++', 'Game Marketing', 'Unity / Tools']);
+const CHIP_PRIORITY = new Set(HERO_CHIPS);
 
 /** Career highlight cards: skimmable, bullet-led (matches CV experience) */
 const CAREER_HIGHLIGHTS = [
@@ -156,9 +69,11 @@ const CAREER_HIGHLIGHTS = [
     project: 'Mayhem À La Carte',
     companyUrl: 'https://mayhemalacarte.com/',
     bullets: [
-      'Own social media strategy and channels',
-      'Reveal campaign, creator outreach, built mayhemalacarte.com',
-      'Voiced part of the trailer; gamescom 2026 and VGDM Vienna',
+      'Own social media strategy and channels; reveal campaign',
+      'Built IGS Outreach: creator CRM + personalised mail engine',
+      'Built mayhemalacarte.com and an AI content pipeline',
+      'On camera: Twitch/YouTube streams, trailer VO, gamescom 2026',
+      'Still coding: EOS co-op framework, recipe data pipeline',
     ],
     accent: true,
     previous: {
@@ -166,8 +81,8 @@ const CAREER_HIGHLIGHTS = [
     project: 'Crime Boss: Rockay City',
     bullets: [
       '50+ bug fixes in Update 20 (gameplay, UI, replication)',
-      'Modkit: Blueprint/DataTable-driven moddable systems',
-      'EOS multiplayer framework & session/lobby systems',
+      'ModKit: Blueprint/DataTable-driven moddable systems',
+      'ModKit tutorial series + docs: where the marketing started',
     ],
     },
   },
@@ -189,143 +104,13 @@ const CAREER_HIGHLIGHTS = [
     subtitle: 'What I bring to the table',
     project: null,
     bullets: [
-      'Gameplay systems & production debugging in Unreal',
-      'Multiplayer architecture, replication, EOS',
-      'Moddable systems, tools, and clean C++/Blueprint workflows',
+      'Marketing that is engineered: tools, data and automation',
+      'Creator relations, social and community, on and off camera',
+      'Unreal gameplay & multiplayer depth, so I speak dev fluently',
     ],
     accent: false,
   },
 ];
-
-/** About / typewriter paragraph: CV tagline + filler so the profile box feels full */
-const ABOUT_SUMMARY =
-  'Gameplay Programmer specializing in multiplayer systems and networked gameplay in Unreal Engine, experienced with replication, Join-In-Progress, and Epic Online Services on a shipped commercial title. I also fix the bugs that make you alt-tab to the wiki at 2 a.m. I shipped fixes on Crime Boss: Rockay City at Ingame Studios and built the Modkit so people can add custom bosses and mod Rockay Rumble. Then my Modkit tutorials and livestreams turned into a second job: now I run marketing for Mayhem À La Carte, Ingame’s next game, from the reveal to creators to the website. I used to do sound and editor tools at nerdmonkeys on Unity stuff. I like code that reads clean and multiplayer that does not desync.';
-
-/** Core strengths: 6 categories. Card = minimal teaser; detail panel = in-depth (different content). */
-const CORE_STRENGTHS = [
-  {
-    label: 'Gameplay systems',
-    teaser: ['Unreal · Blueprints & C++', 'Abilities, items, mission logic'],
-    detail: [
-      'Shipped gameplay and replication fixes on Crime Boss: Rockay City in a large Unreal codebase.',
-      'Comfortable with hybrid Blueprint/C++ systems, gameplay abilities, item systems, and mission logic.',
-      'Production debugging and maintaining live game systems.',
-    ],
-  },
-  {
-    label: 'Networking / EOS',
-    teaser: ['Sessions & lobbies', 'Replication · EOS'],
-    detail: [
-      'Built reusable multiplayer framework on EOS: session creation, lobby flow, dedicated server support.',
-      'Handled join-in-progress, replication edge cases, and async session lifecycle.',
-      'Experience debugging networked gameplay in production.',
-    ],
-  },
-  {
-    label: 'Tools & modding',
-    teaser: ['Modkit · DataTables', 'Editor tooling'],
-    detail: [
-      'Refactored gameplay systems for the Crime Boss modkit: Blueprint-extensible, DataTable-driven design.',
-      'Editor tools and pipelines (Unity and Unreal). Technical docs and modding support.',
-    ],
-  },
-  {
-    label: 'Engines & languages',
-    teaser: ['Unreal 4/5', 'Unity'],
-    detail: [
-      'Daily driver: Unreal Engine 4/5 (C++, Blueprints). Prior professional work in Unity (C#).',
-      'Familiar with engine APIs, build pipelines, and cross-engine patterns.',
-    ],
-  },
-  {
-    label: 'Code',
-    teaser: ['C++ & C#', 'Readable systems'],
-    detail: [
-      'C++ for Unreal (native modules, gameplay, networking). C# for Unity and tools.',
-      'Focus on readable code, clear architecture, and maintainable systems. Blueprint and native integration.',
-    ],
-  },
-  {
-    label: 'Shipping / Production',
-    teaser: ['Live debugging', 'Updates'],
-    detail: [
-      'Bug fixing and maintenance in shipped, live codebases (e.g. 50+ fixes in Crime Boss Update 20).',
-      'Comfortable with update pipelines, QA handoff, and getting changes to release.',
-    ],
-  },
-];
-
-/** Radar chart: 6 axes, same order as CORE_STRENGTHS; short labels for SVG */
-const RADAR_CENTER = 120;
-const RADAR_RADIUS = 96;
-const RADAR_STATS = [
-  { label: 'Gameplay', value: 0.92 },
-  { label: 'Networking', value: 0.88 },
-  { label: 'Tools', value: 0.85 },
-  { label: 'Engines', value: 0.9 },
-  { label: 'Code', value: 0.78 },
-  { label: 'Shipping', value: 0.95 },
-];
-
-/** Per-corner drift: each corner has its own phase so they move independently, not one pulse */
-const RADAR_DRIFT_AMP = 2;
-const RADAR_DRIFT_SPEED = 0.00045;
-const RADAR_DRIFT_PHASE = [0, 1.05, 2.1, 0.5, 1.6, 2.4];
-
-/** Neural topology: ring (adjacent) + a few chords. Not a star so it reads as a network, not a pentagram. */
-const RADAR_NEURAL_RING: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0],
-];
-const RADAR_NEURAL_CHORDS: [number, number][] = [
-  [0, 2], [1, 4], [3, 5],
-];
-/** Signal speed along each link; per-link phase so signals don’t move in lockstep. */
-const NEURAL_SIGNAL_SPEED = 0.00012;
-const NEURAL_SIGNAL_PHASE_RING = [0, 0.4, 0.8, 0.2, 0.6, 1.0];
-const NEURAL_SIGNAL_PHASE_CHORDS = [0.3, 0.7, 0.1];
-
-function getRadarCorners(values: number[], progress: number, time: number): { x: number; y: number }[] {
-  const n = values.length;
-  return values.map((v, i) => {
-    const angleDeg = (i * 360) / n - 90;
-    const rad = (angleDeg * Math.PI) / 180;
-    const baseR = RADAR_RADIUS * Math.min(1, v * progress);
-    const phaseOffset = RADAR_DRIFT_PHASE[i] ?? i;
-    const drift = RADAR_DRIFT_AMP * Math.sin(time * RADAR_DRIFT_SPEED + phaseOffset);
-    const r = baseR + drift;
-    return {
-      x: RADAR_CENTER + r * Math.cos(rad),
-      y: RADAR_CENTER + r * Math.sin(rad),
-    };
-  });
-}
-
-function getRadarPointsFromCorners(corners: { x: number; y: number }[]): string {
-  return corners.map((c) => `${c.x},${c.y}`).join(' ');
-}
-
-/** Labels on a fixed circle only; motion is 100% CSS float so no JS-driven jumps */
-const LABEL_RADIUS = RADAR_RADIUS * 1.32;
-
-function getRadarAxisAnimated(
-  i: number,
-  value: number,
-  progress: number,
-  time: number
-): { axisX: number; axisY: number; labelX: number; labelY: number } {
-  const n = 6;
-  const phaseOffset = RADAR_DRIFT_PHASE[i] ?? i;
-  const drift = RADAR_DRIFT_AMP * Math.sin(time * RADAR_DRIFT_SPEED + phaseOffset);
-  const angleDeg = (i * 360) / n - 90;
-  const rad = (angleDeg * Math.PI) / 180;
-  const baseR = RADAR_RADIUS * Math.min(1, value * progress);
-  const animatedR = baseR + drift;
-  const axisX = RADAR_CENTER + animatedR * Math.cos(rad);
-  const axisY = RADAR_CENTER + animatedR * Math.sin(rad);
-  const labelX = RADAR_CENTER + LABEL_RADIUS * Math.cos(rad);
-  const labelY = RADAR_CENTER + LABEL_RADIUS * Math.sin(rad);
-  return { axisX, axisY, labelX, labelY };
-}
 
 /** Recurring motif: section header with › prompt and animated accent line */
 const SectionLabel = ({ label, className = '' }: { label: string; className?: string }) => (
@@ -349,9 +134,6 @@ const CV_DOWNLOAD_FILENAME = 'Julian-Strunz-CV.pdf';
 const CV_SUCCESS_RESET_MS = 2200;
 
 const About = () => {
-  const [hoveredStrength, setHoveredStrength] = useState<number | null>(null);
-  const [radarProgress, setRadarProgress] = useState(0);
-  const [radarTime, setRadarTime] = useState(0);
   const [cvStatus, setCvStatus] = useState<'idle' | 'success'>('idle');
 
   const handleCvDownload = (e: React.MouseEvent) => {
@@ -367,28 +149,6 @@ const About = () => {
     document.body.removeChild(a);
     setTimeout(() => setCvStatus('idle'), CV_SUCCESS_RESET_MS);
   };
-  const radarRef = useRef<HTMLDivElement>(null);
-  const radarInView = useInView(radarRef, { once: true, amount: 0.3 });
-  useEffect(() => {
-    if (!radarInView) return;
-    const ctrl = animate(0, 1, { duration: 1.1, ease: 'easeOut', onUpdate: (v) => setRadarProgress(v) });
-    return () => ctrl.stop();
-  }, [radarInView]);
-  useEffect(() => {
-    let rafId: number;
-    const tick = () => {
-      setRadarTime((t) => t + 14);
-      rafId = requestAnimationFrame(tick);
-    };
-    rafId = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafId);
-  }, []);
-
-  const radarCorners = useMemo(
-    () => getRadarCorners(RADAR_STATS.map((s) => s.value), radarProgress, radarTime),
-    [radarProgress, radarTime]
-  );
-
   return (
     <div className="min-h-screen pt-20 relative overflow-x-hidden">
       <InteractiveBackground variant="grid" intensity="subtle" />
@@ -469,7 +229,7 @@ const About = () => {
                   animate="animate"
                   className="text-lg md:text-xl text-white font-medium mb-2"
                 >
-                  Gameplay Programmer // Marketing Engineer
+                  Marketing Engineer // Gameplay Programmer
                 </motion.p>
                 <motion.p
                   variants={heroValue}
@@ -666,350 +426,42 @@ const About = () => {
             </motion.div>
           </motion.div>
 
-          {/* —— 3. Core strengths: strict grid — top row LEFT = graph, RIGHT = detail; bottom row 6 cards —— */}
+          {/* —— 3. Skill map: BUILD × GROW reactor —— */}
           <motion.div
-            className={`rounded-xl border border-primary/30 bg-black/30 p-4 md:p-5 w-full max-w-5xl mx-auto min-w-0 overflow-hidden ${SECTION_SPACE}`}
-            initial="initial"
-            whileInView="animate"
+            className={`relative rounded-xl border border-primary/30 bg-black/40 p-4 md:p-8 w-full min-w-0 overflow-hidden ${SECTION_SPACE}`}
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-60px' }}
-            variants={{ initial: {}, animate: { transition: { staggerChildren: 0.08, delayChildren: 0.05 } } }}
+            transition={{ duration: 0.5 }}
           >
-            <SectionLabel label="Core strengths" className="mb-4" />
-            {/* Top row: 2 columns — LEFT = graph; RIGHT = detail (scrolls) + cockpit strip (fixed at bottom, above cards) */}
-            <div
-              ref={radarRef}
-              className="grid grid-cols-1 md:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] gap-4 md:gap-6 mb-4 w-full min-w-0 items-stretch"
-            >
-              {/* Left column: radar graph — responsive max-width so it doesn't overflow on small screens */}
-              <motion.div
-                className="min-w-0 self-start justify-self-start w-full max-w-full"
-                initial={{ opacity: 0, scale: 0.92 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.4, ease: 'easeOut' }}
-              >
-                <div className="w-full max-w-[280px] sm:max-w-[360px] md:max-w-[480px] aspect-square overflow-visible mx-auto md:mx-0">
-                  <svg viewBox="-15 -15 270 270" className="w-full h-full block overflow-visible" aria-hidden>
-                    <defs>
-                      <linearGradient id="radar-fill" x1="0%" y1="0%" x2="100%" y2="100%">
-                        <stop offset="0%" stopColor="rgba(240,126,65,0.4)" />
-                        <stop offset="100%" stopColor="rgba(240,126,65,0.06)" />
-                      </linearGradient>
-                      <filter id="radar-glow">
-                        <feGaussianBlur stdDeviation="1.5" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                      <filter id="radar-highlight-glow" x="-40" y="-40" width="320" height="320" filterUnits="userSpaceOnUse">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                      <filter id="radar-signal-glow" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur" />
-                        <feMerge>
-                          <feMergeNode in="blur" />
-                          <feMergeNode in="SourceGraphic" />
-                        </feMerge>
-                      </filter>
-                    </defs>
-
-                    {[0.25, 0.5, 0.75, 1].map((r, i) => (
-                      <circle
-                        key={i}
-                        cx="120"
-                        cy="120"
-                        r={RADAR_RADIUS * r}
-                        fill="none"
-                        stroke="rgba(240,126,65,0.14)"
-                        strokeWidth="0.8"
-                      />
-                    ))}
-
-                    {/* Neural network: ring + chords, two signals per edge (opposite directions) + glow */}
-                    {[...RADAR_NEURAL_RING, ...RADAR_NEURAL_CHORDS].map(([a, b], idx) => {
-                      const from = radarCorners[a];
-                      const to = radarCorners[b];
-                      if (!from || !to) return null;
-                      const isRing = idx < RADAR_NEURAL_RING.length;
-                      const phase = isRing
-                        ? NEURAL_SIGNAL_PHASE_RING[idx]
-                        : NEURAL_SIGNAL_PHASE_CHORDS[idx - RADAR_NEURAL_RING.length];
-                      const t1 = (radarTime * NEURAL_SIGNAL_SPEED + phase) % 1;
-                      const t2 = (radarTime * NEURAL_SIGNAL_SPEED * 0.9 + phase + 0.5) % 1;
-                      const sx1 = from.x + (to.x - from.x) * t1;
-                      const sy1 = from.y + (to.y - from.y) * t1;
-                      const sx2 = from.x + (to.x - from.x) * t2;
-                      const sy2 = from.y + (to.y - from.y) * t2;
-                      return (
-                        <g key={`neural-${a}-${b}`}>
-                          <line
-                            x1={from.x}
-                            y1={from.y}
-                            x2={to.x}
-                            y2={to.y}
-                            stroke="rgba(240,126,65,0.16)"
-                            strokeWidth="0.65"
-                            strokeLinecap="round"
-                          />
-                          <circle cx={sx1} cy={sy1} r={1.6} fill="rgba(240,126,65,0.65)" stroke="rgba(240,126,65,0.4)" strokeWidth="0.35" filter="url(#radar-signal-glow)" />
-                          <circle cx={sx2} cy={sy2} r={1.2} fill="rgba(240,126,65,0.45)" stroke="rgba(240,126,65,0.3)" strokeWidth="0.3" filter="url(#radar-signal-glow)" />
-                        </g>
-                      );
-                    })}
-                    {/* Node “neurons” — soft fill + ring */}
-                    {radarCorners.map((c, i) => (
-                      <g key={`node-${i}`}>
-                        <circle cx={c.x} cy={c.y} r={2.4} fill="rgba(240,126,65,0.08)" />
-                        <circle cx={c.x} cy={c.y} r={1.9} fill="rgba(240,126,65,0.22)" stroke="rgba(240,126,65,0.35)" strokeWidth="0.5" />
-                      </g>
-                    ))}
-
-                    {/* Polygon: unified breathing so edges move as one */}
-                    <polygon
-                      className="radar-polygon-pulse"
-                      points={getRadarPointsFromCorners(radarCorners)}
-                      fill="url(#radar-fill)"
-                      stroke="rgba(240,126,65,0.55)"
-                      strokeWidth="1.4"
-                      filter="url(#radar-glow)"
-                    />
-
-                    {/* Axis lines: non-highlighted (use animated position) */}
-                    {RADAR_STATS.map((stat, i) => {
-                      const { axisX, axisY } = getRadarAxisAnimated(
-                        i,
-                        stat.value,
-                        radarProgress,
-                        radarTime
-                      );
-                      const isHighlight = hoveredStrength === i;
-                      if (isHighlight) return null;
-                      return (
-                        <line
-                          key={`axis-${stat.label}`}
-                          x1={RADAR_CENTER}
-                          y1={RADAR_CENTER}
-                          x2={axisX}
-                          y2={axisY}
-                          stroke="rgba(240,126,65,0.22)"
-                          strokeWidth="0.8"
-                          strokeLinecap="round"
-                        />
-                      );
-                    })}
-                    {/* Labels — fixed position (base radius only, no breathe) so they don’t move with the graph */}
-                    {RADAR_STATS.map((stat, i) => {
-                      const { labelX, labelY } = getRadarAxisAnimated(
-                        i,
-                        stat.value,
-                        radarProgress,
-                        radarTime
-                      );
-                      const isHighlight = hoveredStrength === i;
-                      const padH = 6;
-                      const padV = 3;
-                      const boxW = Math.max(44, stat.label.length * 5.2) + padH * 2;
-                      const boxH = 14 + padV * 2;
-                      return (
-                        <g key={`label-${stat.label}`} transform={`translate(${labelX},${labelY})`}>
-                          <rect
-                            x={-boxW / 2}
-                            y={-boxH / 2}
-                            width={boxW}
-                            height={boxH}
-                            rx="3"
-                            ry="3"
-                            fill={isHighlight ? 'rgba(20,20,20,0.95)' : 'rgba(0,0,0,0.85)'}
-                            stroke={isHighlight ? 'rgba(240,126,65,0.95)' : 'rgba(240,126,65,0.5)'}
-                            strokeWidth={isHighlight ? 1.6 : 0.8}
-                            className={!isHighlight ? 'radar-label-box-pulse' : undefined}
-                          />
-                          <text
-                            x={0}
-                            y={0}
-                            textAnchor="middle"
-                            dominantBaseline="middle"
-                            className={isHighlight ? 'fill-primary font-mono' : 'fill-primary/90 font-mono'}
-                            style={{ fontSize: '10px', fontWeight: isHighlight ? 700 : 600 }}
-                          >
-                            {stat.label}
-                          </text>
-                        </g>
-                      );
-                    })}
-                    {/* Highlighted axis drawn last so it’s on top of labels (fixes top/bottom being covered) */}
-                    {hoveredStrength !== null && (() => {
-                      const { axisX, axisY } = getRadarAxisAnimated(
-                        hoveredStrength,
-                        RADAR_STATS[hoveredStrength].value,
-                        radarProgress,
-                        radarTime
-                      );
-                      return (
-                        <>
-                          <line
-                            x1={RADAR_CENTER}
-                            y1={RADAR_CENTER}
-                            x2={axisX}
-                            y2={axisY}
-                            stroke="rgba(240,126,65,0.9)"
-                            strokeWidth="1.8"
-                            strokeLinecap="round"
-                            filter="url(#radar-highlight-glow)"
-                          />
-                          <line
-                            x1={RADAR_CENTER}
-                            y1={RADAR_CENTER}
-                            x2={axisX}
-                            y2={axisY}
-                            stroke="rgb(240,126,65)"
-                            strokeWidth="1"
-                            strokeLinecap="round"
-                            opacity="0.95"
-                          />
-                        </>
-                      );
-                    })()}
-                  </svg>
-                </div>
-              </motion.div>
-              {/* Right column: detail in fixed-height box so switching highlights doesn't resize or shift content below */}
-              <motion.div
-                className="min-w-0 flex flex-col w-full"
-                initial={false}
-                animate={{ opacity: hoveredStrength !== null ? 1 : 0.95 }}
-                transition={{ duration: 0.2 }}
-              >
-                {/* Fixed height fits longest detail (3 bullets); no scrollbar — content swaps in place */}
-                <div className="h-[12rem] sm:h-[13rem] md:h-[14rem] shrink-0 overflow-hidden rounded-lg border border-primary/25 bg-black/40 p-4 flex flex-col">
-                  <h4 className="text-xs font-mono text-primary/70 uppercase tracking-wider mb-2 shrink-0">
-                    {hoveredStrength !== null ? CORE_STRENGTHS[hoveredStrength].label : 'Detail'}
-                  </h4>
-                  {hoveredStrength !== null ? (
-                    <ul className="space-y-1.5 text-gray-200 text-sm leading-snug min-w-0">
-                      {CORE_STRENGTHS[hoveredStrength].detail.map((line) => (
-                        <li key={line} className="flex items-start gap-1.5">
-                          <span className="text-primary/50 shrink-0 mt-0.5">·</span>
-                          <span>{line}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="text-gray-400 text-sm min-w-0">Hover or tap a category below to see skills & experience.</p>
-                  )}
-                </div>
-                {/* Cockpit strip: shorter on mobile to avoid dominating; responsive height */}
-                <div
-                  className="flex-shrink-0 h-[90px] sm:h-[120px] md:h-[140px] mt-3 rounded-lg border border-primary/20 bg-black/50 overflow-hidden font-mono text-[10px] relative flex min-w-0"
-                  aria-hidden
-                >
-                  {/* Left: Sys/LOG header + racing logs + single bar graph */}
-                  <div className="flex-1 min-w-0 flex flex-col border-r border-primary/15">
-                    <div className="p-2 border-b border-primary/15 flex items-center gap-2 shrink-0">
-                      <span className="text-primary/60 uppercase tracking-widest">Sys</span>
-                      <span className="cockpit-blink w-1.5 h-1.5 rounded-full bg-primary/90" style={{ animationDelay: '0s' }} />
-                      <span className="text-gray-500">|</span>
-                      <span className="text-gray-500">LOG</span>
-                      <span className="cockpit-blink w-1.5 h-1.5 rounded-full bg-emerald-500/80" style={{ animationDelay: '0.4s' }} />
-                    </div>
-                    <div className="flex-1 min-h-0 overflow-hidden">
-                      <div className="cockpit-log-race p-2 space-y-0.5 text-gray-500">
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>0x04A8 .. ok</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>sync 12ms</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>ch[3] idle</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>latency &lt;8</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>tx 0x1B2C ack</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>heap 42%</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>0x04A8 .. ok</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>sync 12ms</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>ch[3] idle</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>latency &lt;8</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>tx 0x1B2C ack</span></div>
-                        <div className="flex gap-2"><span className="text-primary/50 shrink-0">›</span><span>heap 42%</span></div>
-                      </div>
-                    </div>
-                    <div className="h-5 px-2 border-t border-primary/15 bg-black/40 flex items-end gap-1 shrink-0">
-                      <div className="flex items-end gap-0.5 h-3">
-                        {[5, 9, 6, 12, 7].map((h, i) => (
-                          <div key={i} className="cockpit-bar-pulse w-1.5 bg-primary/50 rounded-sm flex-shrink-0" style={{ height: `${h}px`, animationDelay: `${i * 0.15}s` }} />
-                        ))}
-                      </div>
-                      <span className="text-primary/40 text-[8px] ml-1 uppercase">lvl</span>
-                    </div>
-                  </div>
-                  {/* Right: STAT/IO readouts + blinking LEDs; flexible width, min-w-0 so it can shrink on narrow */}
-                  <div className="w-[48%] min-w-0 flex flex-col p-2 gap-2 border-l border-primary/10 shrink-0 max-w-[140px]">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-primary/50 uppercase tracking-wider text-[9px]">Stat</span>
-                      <div className="flex gap-1">
-                        <span className="cockpit-blink w-1 h-1 rounded-full bg-primary/80" style={{ animationDelay: '0.1s' }} />
-                        <span className="cockpit-blink w-1 h-1 rounded-full bg-amber-500/70" style={{ animationDelay: '0.6s' }} />
-                        <span className="cockpit-blink w-1 h-1 rounded-full bg-emerald-500/70" style={{ animationDelay: '1.1s' }} />
-                      </div>
-                    </div>
-                    <div className="text-gray-500 text-[9px] space-y-0.5">
-                      <div className="flex justify-between"><span>PWR</span><span className="text-primary/60">ON</span></div>
-                      <div className="flex justify-between"><span>IO</span><span className="text-primary/50">--</span></div>
-                      <div className="flex justify-between"><span>CRC</span><span className="text-emerald-500/70">0x00</span></div>
-                    </div>
-                    <div className="mt-auto flex items-center justify-end gap-2">
-                      <span className="text-primary/30 text-[8px] uppercase">rdy</span>
-                      <span className="cockpit-blink w-1.5 h-1.5 rounded-full bg-primary/90" style={{ animationDelay: '0.3s' }} />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+            <div className="absolute inset-0 pointer-events-none sr-grid-bg" aria-hidden />
+            <div className="relative flex flex-col md:flex-row md:items-end md:justify-between gap-2 mb-6">
+              <div>
+                <SectionLabel label="Skill map" className="mb-3" />
+                <ScrambleText as="h3" text="BUILD × GROW" className="text-2xl md:text-3xl font-cyber text-white tracking-wider" />
+              </div>
+              <p className="text-gray-400 text-sm font-mono max-w-sm md:text-right">
+                Half engineer, half marketer, one job. Hover a node to see the proof.
+              </p>
             </div>
-            {/* Bottom row: 6 cards; 2 cols mobile, 3 sm, 6 md+; overflow-safe text */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 md:gap-3 w-full min-w-0">
-              {CORE_STRENGTHS.map((group, idx) => (
-                <motion.div
-                  key={group.label}
-                  role="button"
-                  tabIndex={0}
-                  variants={fadeIn}
-                  onMouseEnter={() => setHoveredStrength(idx)}
-                  onMouseLeave={() => setHoveredStrength(null)}
-                  onClick={() => setHoveredStrength((prev) => (prev === idx ? null : idx))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setHoveredStrength((prev) => (prev === idx ? null : idx)); } }}
-                  whileHover={{ y: -2, transition: { duration: 0.2 } }}
-                  whileTap={{ scale: 0.98 }}
-                  className={`min-w-0 min-h-[72px] sm:min-h-[78px] md:min-h-[84px] attention-strength-${idx} rounded-lg border p-2 sm:p-3 pl-2 sm:pl-3 border-l-2 cursor-pointer transition-all duration-200 overflow-hidden ${hoveredStrength === idx ? 'border-primary/70 border-l-primary ring-2 ring-primary/60 bg-black/50 shadow-[0_0_20px_rgba(240,126,65,0.18)]' : 'border-primary/25 border-l-primary/60 bg-black/40 hover:border-primary/40 hover:border-l-primary hover:shadow-[0_0_12px_rgba(240,126,65,0.08)]'}`}
-                >
-                  <h4 className="text-[10px] sm:text-xs font-cyber text-primary uppercase tracking-wider mb-1 sm:mb-1.5 truncate">
-                    {group.label}
-                  </h4>
-                  <ul className="space-y-0.5 text-gray-300 text-[10px] sm:text-xs leading-snug break-words overflow-hidden">
-                    {group.teaser.map((item) => (
-                      <li key={item} className="flex items-start gap-1 min-w-0">
-                        <span className="text-primary/50 shrink-0">·</span>
-                        <span className="break-words">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </motion.div>
-              ))}
+            <div className="relative">
+              <SkillReactor />
             </div>
           </motion.div>
 
-          {/* —— 4. Profile (typewriter when in view) —— */}
+          {/* —— 4. Career timeline —— */}
           <motion.div
-            className={`profile-panel-breathe rounded-lg border border-primary/20 bg-black/30 p-4 sm:p-6 min-w-0 overflow-hidden ${SECTION_SPACE}`}
-            initial={{ opacity: 0, y: 10 }}
-            whileInView={{ opacity: 1, y: 0 }}
+            className={`min-w-0 ${SECTION_SPACE}`}
+            initial={{ opacity: 0 }}
+            whileInView={{ opacity: 1 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <SectionLabel label="Profile" className="mb-4" />
-            <div className="max-w-2xl min-w-0 w-full">
-              <TypewriterProfile text={ABOUT_SUMMARY} />
+            <div className="mb-8">
+              <SectionLabel label="Trajectory" className="mb-3" />
+              <ScrambleText as="h3" text="FROM CODE TO CAMPAIGNS" className="text-2xl md:text-3xl font-cyber text-white tracking-wider" />
             </div>
+            <CareerTimeline />
           </motion.div>
 
           {/* —— 5. Supporting info (panel + motif + subtle hover) —— */}

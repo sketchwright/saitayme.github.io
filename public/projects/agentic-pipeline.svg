@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a0a0a"/>
+      <stop offset="1" stop-color="#160c07"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#f07e41" stroke-opacity="0.07" stroke-width="1"/>
+    </pattern>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <rect width="1280" height="720" fill="url(#grid)"/>
+  <!-- waveform (stream) -->
+  <g stroke="#f07e41" stroke-width="4" stroke-linecap="round" opacity="0.85">
+    <path d="M70 460v-20M90 470v-40M110 480v-60M130 465v-30M150 490v-80M170 470v-40M190 475v-50M210 495v-90M230 470v-40M250 460v-20M270 480v-60M290 470v-40"/>
+  </g>
+  <text x="70" y="540" font-family="JetBrains Mono, Consolas, monospace" font-size="20" fill="#9ca3af">05:12:44 STREAM</text>
+  <!-- pipeline stages -->
+  <g font-family="JetBrains Mono, Consolas, monospace" font-size="20" text-anchor="middle">
+    <g filter="url(#glow)" fill="#0a0a0a" stroke="#f07e41" stroke-width="3">
+      <rect x="360" y="410" width="170" height="90" rx="10"/>
+      <rect x="590" y="410" width="170" height="90" rx="10"/>
+      <rect x="820" y="410" width="170" height="90" rx="10"/>
+      <rect x="1050" y="410" width="170" height="90" rx="10"/>
+    </g>
+    <g fill="#f07e41">
+      <text x="445" y="450">TRANSCRIBE</text><text x="445" y="480" fill="#9ca3af" font-size="16">+ frames</text>
+      <text x="675" y="450">FIND MOMENTS</text><text x="675" y="480" fill="#9ca3af" font-size="16">speech + visuals</text>
+      <text x="905" y="450">REVIEW</text><text x="905" y="480" fill="#9ca3af" font-size="16">human ✓ / ✕</text>
+      <text x="1135" y="450">COPY + POST</text><text x="1135" y="480" fill="#9ca3af" font-size="16">per platform</text>
+    </g>
+  </g>
+  <g stroke="#f07e41" stroke-width="3" fill="#f07e41">
+    <path d="M310 455h40"/><path d="M540 455h40"/><path d="M770 455h40"/><path d="M1000 455h40"/>
+    <path d="M350 448l10 7-10 7z"/><path d="M580 448l10 7-10 7z"/><path d="M810 448l10 7-10 7z"/><path d="M1040 448l10 7-10 7z"/>
+  </g>
+  <!-- clip frames -->
+  <g fill="#0a0a0a" stroke="#f07e41" stroke-opacity="0.6" stroke-width="2">
+    <rect x="845" y="560" width="54" height="96" rx="6"/><rect x="910" y="560" width="54" height="96" rx="6"/>
+    <rect x="1075" y="560" width="54" height="96" rx="6"/><rect x="1140" y="560" width="54" height="96" rx="6"/>
+  </g>
+  <g fill="#f07e41" opacity="0.9"><path d="M864 596l20 12-20 12z"/><path d="M929 596l20 12-20 12z"/><path d="M1094 596l20 12-20 12z"/><path d="M1159 596l20 12-20 12z"/></g>
+  <!-- title -->
+  <g font-family="Orbitron, Arial Black, sans-serif">
+    <text x="70" y="190" font-size="78" font-weight="900" fill="#f07e41" filter="url(#glow)">AGENTIC</text>
+    <text x="70" y="270" font-size="56" font-weight="700" fill="#ffffff">CONTENT PIPELINE</text>
+  </g>
+  <rect x="72" y="300" width="120" height="5" fill="#f07e41"/>
+  <text x="70" y="350" font-family="JetBrains Mono, Consolas, monospace" font-size="22" fill="#9ca3af">AI does the grind · human approves</text>
+</svg>

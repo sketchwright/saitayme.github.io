@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import AnimatedGrid from '@/components/AnimatedGrid';
 import ImpactStrip from '@/components/ImpactStrip';
 import ProjectCarousel from '@/components/ProjectCarousel';
-import ModkitShowcase from '@/components/ModkitShowcase';
+import MediaHub from '@/components/MediaHub';
 import QuoteWall from '@/components/QuoteWall';
 import SkillAuthorityGrid from '@/components/SkillAuthorityGrid';
 import ContactCTA from '@/components/ContactCTA';
@@ -519,9 +519,9 @@ const Home = ({ onPlayGame }: HomeProps) => {
         <ProjectCarousel />
       </section>
 
-      {/* Modkit video showcase */}
+      {/* Media Hub: streams, studio videos, socials, ModKit origins */}
       <section className="bg-cyber-dark/35">
-        <ModkitShowcase />
+        <MediaHub />
       </section>
 
       {/* Recommendations / Quotes */}

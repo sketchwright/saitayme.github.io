@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { DiUnitySmall } from 'react-icons/di';
 import { SiUnrealengine } from 'react-icons/si';
+import { MdCampaign } from 'react-icons/md';
 import ProjectCard from '@/components/ProjectCard';
 import ProjectModal from '@/components/ProjectModal';
 import { useKonamiCode } from '@/hooks/useKonamiCode';
@@ -69,9 +70,13 @@ const Projects = () => {
             Selected Work
           </h1>
           <p className="text-gray-400 font-mono text-lg max-w-2xl mx-auto mb-6">
-            Professional projects, tools, and prototypes across Unreal Engine and Unity.
+            Marketing engineering, Unreal gameplay &amp; multiplayer, and the tools in between.
           </p>
           <div className="flex justify-center gap-8 mb-4">
+            <div className="flex items-center gap-2 text-primary">
+              <MdCampaign className="text-2xl" />
+              <span className="font-mono">Marketing</span>
+            </div>
             <div className="flex items-center gap-2 text-primary">
               <DiUnitySmall className="text-2xl" />
               <span className="font-mono">Unity</span>
@@ -210,7 +215,7 @@ const Projects = () => {
         {additionalFiltered.length > 0 && (
           <section className="mb-16">
             <h2 className="text-2xl font-cyber text-primary mb-6 border-b border-primary/30 pb-2">
-              Additional Projects
+              Personal &amp; Game Jams
             </h2>
             <div
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
