@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Bestiary (dev)</title>
+    <style>
+      :root {
+        --bg: #0a0a0a;
+        --panel: #111111;
+        --line: #1f1f1f;
+        --orange: #f07e41;
+        --text: #f4efe8;
+        --muted: #7a7a7a;
+        --mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+      }
+      html,
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--mono);
+      }
+      header {
+        position: fixed;
+        inset: 0 0 auto 0;
+        height: 44px;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: none;
+        white-space: nowrap;
+      }
+      header .title {
+        color: var(--orange);
+        font-weight: 700;
+      }
+      header .sep {
+        flex: 1;
+      }
+      header button {
+        font: inherit;
+        letter-spacing: inherit;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid var(--line);
+        padding: 5px 9px;
+        cursor: pointer;
+      }
+      header button:hover {
+        color: var(--text);
+        border-color: #3a3a3a;
+      }
+      header button.on {
+        color: var(--orange);
+        border-color: var(--orange);
+      }
+      header button kbd {
+        font: inherit;
+        color: var(--orange);
+        margin-right: 6px;
+      }
+      #stats {
+        color: var(--muted);
+        min-width: 150px;
+        text-align: right;
+      }
+      canvas {
+        position: fixed;
+        top: 44px;
+        left: 0;
+        display: block;
+        cursor: crosshair;
+      }
+      #spacer {
+        width: 1px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="title">Bestiary</span>
+      <span style="color: var(--muted)">enemy test bench</span>
+      <span class="sep"></span>
+      <button id="b-debug"><kbd>D</kbd>Debug</button>
+      <button id="b-lunge"><kbd>L</kbd>Freeze &rarr; Lunge</button>
+      <button id="b-boss"><kbd>B</kbd>Boss phase</button>
+      <button id="b-split"><kbd>X</kbd>Split nodes</button>
+      <button id="b-slow"><kbd>S</kbd>Slow-mo</button>
+      <button id="b-pause"><kbd>Space</kbd>Pause</button>
+      <button id="b-stress"><kbd>P</kbd>Stress 60</button>
+      <button id="b-s1"><kbd>1</kbd>1&times;</button>
+      <button id="b-s2"><kbd>2</kbd>2&times;</button>
+      <button id="b-s3"><kbd>3</kbd>3&times;</button>
+      <span id="stats">-- fps</span>
+    </header>
+    <canvas id="c"></canvas>
+    <div id="spacer"></div>
+    <script type="module" src="/src/components/cybergame/enemies/bestiary.ts"></script>
+  </body>
+</html>
