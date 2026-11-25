@@ -133,7 +133,8 @@ const GlitchText = ({ children, delay = 0, initialReveal = false }: { children: 
 const BOOT_SEEN_KEY = 'portfolio-boot-seen';
 
 
-const TerminalText = ({ children, delay = 0 }: { children: string, delay?: number }) => {
+const DECODE_GLYPHS = '!<>-_\\/[]{}=+*^?#01ABCDEF';
+const TerminalText = ({ children, delay = 0, decode = false }: { children: string, delay?: number, decode?: boolean }) => {
   const [text, setText] = React.useState('');
   const [isComplete, setIsComplete] = React.useState(false);
   const [hasStarted, setHasStarted] = React.useState(false);
@@ -148,6 +149,24 @@ const TerminalText = ({ children, delay = 0 }: { children: string, delay?: numbe
       if (!mountedRef.current) return;
       
       setHasStarted(true);
+      if (decode) {
+        // fast decode scramble: whole line present, resolves left→right in ~0.4s
+        const start = performance.now();
+        intervalRef.current = setInterval(() => {
+          if (!mountedRef.current) return;
+          const p = Math.min(1, (performance.now() - start) / 400);
+          const n = Math.floor(p * children.length);
+          let out = '';
+          for (let i = 0; i < children.length; i++) out += i < n || children[i] === ' ' ? children[i] : DECODE_GLYPHS[Math.floor(Math.random() * DECODE_GLYPHS.length)];
+          setText(out);
+          if (p >= 1) {
+            if (intervalRef.current) clearInterval(intervalRef.current);
+            intervalRef.current = null;
+            setIsComplete(true);
+          }
+        }, 30);
+        return;
+      }
       let currentText = '';
       let currentIndex = 0;
 
@@ -177,7 +196,7 @@ const TerminalText = ({ children, delay = 0 }: { children: string, delay?: numbe
         clearInterval(intervalRef.current);
       }
     };
-  }, [children, delay]);
+  }, [children, delay, decode]);
 
   // Don't render anything until we've started
   if (!hasStarted) {
@@ -239,7 +258,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
   const heroDelay = 0;
   const heroDuration = firstVisit ? 0.2 : 0.5;
   const contentDelays = firstVisit
-    ? { glitch: 0, terminal: 1850, paragraph: 2.25, buttons: 2.55 }
+    ? { glitch: 0, terminal: 1950, paragraph: 0, buttons: 0 }
     : { glitch: 0, terminal: 0, paragraph: 0.2, buttons: 0.3 };
 
   const handleBootComplete = React.useCallback(() => {
@@ -274,19 +293,19 @@ const Home = ({ onPlayGame }: HomeProps) => {
               <h1 className="text-6xl md:text-8xl tracking-wider space-y-4">
                 <GlitchText delay={contentDelays.glitch} initialReveal={false}>Julian Strunz</GlitchText>
                 <div className="h-4 md:h-12" />
-                <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="boot-sub flex flex-col items-center justify-center space-y-4">
                   <div className="text-[#fcee0a] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
-                    <TerminalText delay={contentDelays.terminal}>{`> MARKETING ENGINEER // GAMEPLAY PROGRAMMER_`}</TerminalText>
+                    <TerminalText delay={contentDelays.terminal} decode={firstVisit}>{`> MARKETING ENGINEER // GAMEPLAY PROGRAMMER_`}</TerminalText>
                   </div>
                 </div>
               </h1>
             </motion.div>
 
             <motion.p
-              initial={{ opacity: 0, y: 20 }}
+              initial={firstVisit ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: contentDelays.paragraph, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="text-gray-400 max-w-2xl mx-auto px-4 text-lg font-mono"
+              className="boot-wipe text-gray-400 max-w-2xl mx-auto px-4 text-lg font-mono"
             >
               Marketing Engineer at Ingame Studios: I run marketing for Mayhem À La Carte
               and build the tools behind it. Before that, Unreal gameplay &amp; multiplayer on Crime Boss.
@@ -294,10 +313,10 @@ const Home = ({ onPlayGame }: HomeProps) => {
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={firstVisit ? false : { opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: contentDelays.buttons, ease: [0.25, 0.46, 0.45, 0.94] }}
-              className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6 mt-8"
+              className="boot-stamp flex flex-col md:flex-row items-center justify-center gap-4 md:gap-6 mt-8"
             >
               <Link to="/projects">
                 <motion.button
@@ -324,7 +343,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
                 onClick={onPlayGame}
                 className="group relative px-5 py-2.5 font-mono text-xs tracking-[0.3em] uppercase text-primary border border-primary/40 hover:bg-primary hover:text-black transition-colors"
                 variants={gameButtonVariants}
-                initial="initial"
+                initial={firstVisit ? false : 'initial'}
                 animate="animate"
                 whileHover="hover"
               >
@@ -340,7 +359,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
         </div>
 
         {/* Tags at bottom edge of hero — existing ImpactStrip moved here */}
-        <div ref={heroContentRef} className="relative z-10 pb-4">
+        <div ref={heroContentRef} className="boot-stats relative z-10 pb-4">
           <ImpactStrip compact={true} />
         </div>
 
