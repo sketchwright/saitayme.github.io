@@ -153,6 +153,33 @@ const ProjectModal = ({ project, onClose }: ProjectModalProps) => {
               </motion.div>
             )}
 
+            {/* Screenshots */}
+            {project.gallery && project.gallery.length > 0 && (
+              <motion.div variants={itemVariants}>
+                <h3 className="text-lg font-cyber text-primary mb-3">SCREENSHOTS</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {project.gallery.map((src, i) => (
+                    <a
+                      key={src}
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block overflow-hidden rounded-md border border-primary/30 transition-shadow duration-200 hover:border-[#f07e41] hover:shadow-[0_0_14px_rgba(240,126,65,0.45)]"
+                    >
+                      <img
+                        src={src}
+                        alt={`${project.title} image ${i + 1}`}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-auto block"
+                      />
+                    </a>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs font-mono text-gray-500">© Ingame Studios. Mayhem À La Carte</p>
+              </motion.div>
+            )}
+
             {/* Tags */}
             <motion.div variants={itemVariants}>
               <h3 className="text-lg font-cyber text-primary mb-3">Technologies</h3>

@@ -27,6 +27,8 @@ export type Project = {
   systems: ProjectSystem[];
   demoUrl?: string;
   githubUrl?: string;
+  gallery?: string[];
+  thumbnailPosition?: string;
 };
 
 export type SectionProps = {

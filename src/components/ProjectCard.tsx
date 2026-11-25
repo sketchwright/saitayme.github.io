@@ -97,7 +97,7 @@ const ProjectCard = ({
             src={project.thumbnail}
             alt={project.title}
             className={`w-full h-full transition-none object-center ${isLogoThumb ? 'object-contain p-4' : 'object-cover'}`}
-            style={{ display: 'block', minWidth: '100%', minHeight: '100%' }}
+            style={{ display: 'block', minWidth: '100%', minHeight: '100%', objectPosition: project.thumbnailPosition }}
           />
         </motion.div>
         {/* One-time faint scan sweep on first hover */}

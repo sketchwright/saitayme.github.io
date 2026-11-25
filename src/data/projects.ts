@@ -27,6 +27,9 @@ export interface Project {
   systems: ProjectSystem[];
   demoUrl?: string;
   githubUrl?: string;
+  gallery?: string[];
+  /** CSS object-position for the card thumbnail, e.g. 'left center'. */
+  thumbnailPosition?: string;
 }
 
 export const projects: Project[] = [
@@ -36,7 +39,15 @@ export const projects: Project[] = [
     title: 'Mayhem À La Carte',
     description: 'Marketing Engineer for Mayhem À La Carte, Ingame Studios’ next game, published by 505 Games. I own the social media strategy and channels, worked on the reveal campaign, run creator outreach, built mayhemalacarte.com and voiced part of the trailer. Started because my ModKit tutorials and livestreams worked, so the studio moved me into marketing full time.',
     shortDescription: 'Marketing for Ingame Studios’ next game: reveal, social, creators, website.',
-    thumbnail: '/projects/mayhem-a-la-carte.jpg',
+    thumbnail: '/projects/mayhem/key-art.jpg',
+    thumbnailPosition: 'left center',
+    gallery: [
+      '/projects/mayhem/shot-01.jpg',
+      '/projects/mayhem/shot-02.jpg',
+      '/projects/mayhem/shot-03.jpg',
+      '/projects/mayhem/shot-04.jpg',
+      '/projects/mayhem/shot-05.jpg',
+    ],
     category: 'Marketing',
     tags: ['Game Marketing', 'Social Media', 'Creator Outreach', 'Web', 'Trailer VO'],
     projectType: 'Professional',
