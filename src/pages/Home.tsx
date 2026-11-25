@@ -123,7 +123,7 @@ const GlitchText = ({ children, delay = 0, initialReveal = false }: { children: 
       animate={{ opacity: 1 }}
       transition={{ duration: 0.6, delay: initialReveal ? 0 : delay }}
     >
-      <div className="glitch-text" data-text={children}>
+      <div className="glitch-text" data-text={children} data-hero-name>
         {children}
       </div>
     </motion.div>
@@ -132,7 +132,6 @@ const GlitchText = ({ children, delay = 0, initialReveal = false }: { children: 
 
 const BOOT_SEEN_KEY = 'portfolio-boot-seen';
 
-const HOLD_AFTER_LOGS_MS = 550;
 
 const TerminalText = ({ children, delay = 0 }: { children: string, delay?: number }) => {
   const [text, setText] = React.useState('');
@@ -219,7 +218,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
       opacity: 1,
       y: 0,
       transition: {
-        delay: hasSeenBoot ? 0.3 : 1.5,
+        delay: initialHadSeenBoot.current ? 0.3 : 2.6,
         duration: 0.6,
         ease: "easeOut"
       }
@@ -235,12 +234,13 @@ const Home = ({ onPlayGame }: HomeProps) => {
   }), [hasSeenBoot]);
 
   // Boot ~1s then overlay goes; hero fades in after, name reveal later so it’s visible
-  const bootHoldPlusFadeStart = 1 + HOLD_AFTER_LOGS_MS / 1000;
-  const heroDelay = hasSeenBoot ? 0 : bootHoldPlusFadeStart;
-  const heroDuration = hasSeenBoot ? 0.5 : 1;
-  const contentDelays = hasSeenBoot
-    ? { glitch: 0, terminal: 0, paragraph: 0.2, buttons: 0.3 }
-    : { glitch: bootHoldPlusFadeStart, terminal: 1750, paragraph: 2.2, buttons: 2.6 };
+  // Delays are fixed for this mount (based on whether the boot plays now), so nothing re-reveals when the boot ends.
+  const firstVisit = !initialHadSeenBoot.current;
+  const heroDelay = 0;
+  const heroDuration = firstVisit ? 0.2 : 0.5;
+  const contentDelays = firstVisit
+    ? { glitch: 0, terminal: 1850, paragraph: 2.25, buttons: 2.55 }
+    : { glitch: 0, terminal: 0, paragraph: 0.2, buttons: 0.3 };
 
   const handleBootComplete = React.useCallback(() => {
     try { sessionStorage.setItem(BOOT_SEEN_KEY, 'true'); } catch (_) {}
@@ -272,10 +272,10 @@ const Home = ({ onPlayGame }: HomeProps) => {
           >
             <motion.div className="space-y-8">
               <h1 className="text-6xl md:text-8xl tracking-wider space-y-4">
-                <GlitchText delay={contentDelays.glitch} initialReveal={!hasSeenBoot}>Julian Strunz</GlitchText>
+                <GlitchText delay={contentDelays.glitch} initialReveal={false}>Julian Strunz</GlitchText>
                 <div className="h-4 md:h-12" />
                 <div className="flex flex-col items-center justify-center space-y-4">
-                  <div className="text-[#f4efe8] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
+                  <div className="text-[#fcee0a] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
                     <TerminalText delay={contentDelays.terminal}>{`> MARKETING ENGINEER // GAMEPLAY PROGRAMMER_`}</TerminalText>
                   </div>
                 </div>

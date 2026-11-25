@@ -41,7 +41,7 @@
     position: relative;
     display: inline-block;
     font-family: 'Orbitron', sans-serif;
-    color: #f4efe8;
+    color: #fcee0a;
     font-size: 4rem;
     font-weight: bold;
     text-transform: uppercase;
@@ -62,7 +62,7 @@
 
   .glitch-text::before {
     left: 2px;
-    text-shadow: -2px 0 #8a1c12;
+    text-shadow: -2px 0 #ff00c1;
     animation: glitch-anim 0.3s infinite alternate-reverse;
   }
 
@@ -642,31 +642,31 @@ div.profile-typewriter span.profile-highlight {
 
 @keyframes glitch {
   0% {
-    text-shadow: 0.05em 0 0 #f07e41, -0.03em -0.04em 0 #8a1c12,
+    text-shadow: 0.05em 0 0 #00fffc, -0.03em -0.04em 0 #fc00ff,
                  0.025em 0.04em 0 #fffc00;
   }
   15% {
-    text-shadow: 0.05em 0 0 #f07e41, -0.03em -0.04em 0 #8a1c12,
+    text-shadow: 0.05em 0 0 #00fffc, -0.03em -0.04em 0 #fc00ff,
                  0.025em 0.04em 0 #fffc00;
   }
   16% {
-    text-shadow: -0.05em -0.025em 0 #f07e41, 0.025em 0.035em 0 #8a1c12,
+    text-shadow: -0.05em -0.025em 0 #00fffc, 0.025em 0.035em 0 #fc00ff,
                  -0.05em -0.05em 0 #fffc00;
   }
   49% {
-    text-shadow: -0.05em -0.025em 0 #f07e41, 0.025em 0.035em 0 #8a1c12,
+    text-shadow: -0.05em -0.025em 0 #00fffc, 0.025em 0.035em 0 #fc00ff,
                  -0.05em -0.05em 0 #fffc00;
   }
   50% {
-    text-shadow: 0.05em 0.035em 0 #f07e41, 0.03em 0 0 #8a1c12,
+    text-shadow: 0.05em 0.035em 0 #00fffc, 0.03em 0 0 #fc00ff,
                  0 -0.04em 0 #fffc00;
   }
   99% {
-    text-shadow: 0.05em 0.035em 0 #f07e41, 0.03em 0 0 #8a1c12,
+    text-shadow: 0.05em 0.035em 0 #00fffc, 0.03em 0 0 #fc00ff,
                  0 -0.04em 0 #fffc00;
   }
   100% {
-    text-shadow: -0.05em 0 0 #f07e41, -0.025em -0.04em 0 #8a1c12,
+    text-shadow: -0.05em 0 0 #00fffc, -0.025em -0.04em 0 #fc00ff,
                  -0.04em -0.05em 0 #fffc00;
   }
 }
@@ -858,8 +858,8 @@ div.profile-typewriter span.profile-highlight {
   font-size: 6rem;
   font-weight: bold;
   text-transform: uppercase;
-  color: #f4efe8;
-  text-shadow: 0.05em 0 0 #f07e41, -0.03em -0.04em 0 #8a1c12,
+  color: #fcee0a;
+  text-shadow: 0.05em 0 0 #00fffc, -0.03em -0.04em 0 #fc00ff,
                0.025em 0.04em 0 #fffc00;
   opacity: 0;
   animation: mega-glitch-reveal 6s forwards;
@@ -882,7 +882,7 @@ div.profile-typewriter span.profile-highlight {
 
 .mega-glitch::before {
   animation: mega-glitch-anim 0.08s steps(2) infinite;
-  text-shadow: -2px 0 #8a1c12;
+  text-shadow: -2px 0 #ff00c1;
   clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
 }
 
