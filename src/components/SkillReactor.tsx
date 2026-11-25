@@ -58,6 +58,12 @@ export default function SkillReactor() {
   const glitchRef = useRef<SVGRectElement>(null);
   const scanRef = useRef<HTMLSpanElement>(null);
   const countRef = useRef<HTMLSpanElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const leaderRef = useRef<SVGPolylineElement>(null);
+  const anchorRef = useRef<SVGRectElement>(null);
+  const termRef = useRef<SVGRectElement>(null);
+  const focusRef = useRef(6);
 
   const [mode, setMode] = useState<Mode>('both');
   const [hover, setHover] = useState<number | null>(null);
@@ -82,6 +88,7 @@ export default function SkillReactor() {
   }, [mode]);
 
   const focus = hover ?? panel;
+  focusRef.current = focus;
   useEffect(() => {
     st.current.countTo = Math.round(SKILLS[focus].level * 100);
     st.current.countAt = performance.now();
@@ -148,6 +155,45 @@ export default function SkillReactor() {
           el.style.opacity = String(seg(t, 1.4, 2.2));
         }
       });
+
+      // 3b) leader line: anchor = hovered skill's live (morphing) data vertex; end = panel header corner
+      {
+        const fi = focusRef.current;
+        const side = SKILLS[fi].side;
+        const [vx, vy] = pt(fi, R * s.cur[side][fi]);
+        const shape = side === 'grow' ? `rotate(45 ${vx.toFixed(2)} ${vy.toFixed(2)})` : '';
+        if (anchorRef.current) {
+          anchorRef.current.setAttribute('x', (vx - 5).toFixed(2));
+          anchorRef.current.setAttribute('y', (vy - 5).toFixed(2));
+          anchorRef.current.setAttribute('transform', shape);
+          anchorRef.current.setAttribute('data-cx', vx.toFixed(2));
+          anchorRef.current.setAttribute('data-cy', vy.toFixed(2));
+        }
+        const svg = svgRef.current;
+        const panelEl = panelRef.current;
+        const line = leaderRef.current;
+        if (svg && panelEl && line) {
+          const sr = svg.getBoundingClientRect();
+          const pr = panelEl.getBoundingClientRect();
+          const beside = pr.left >= sr.right - 4; // panel to the right (desktop); otherwise it's below → no leader
+          if (beside && sr.width > 0) {
+            const k = SIZE / sr.width;
+            const ex = (pr.left - sr.left) * k; // panel's left edge in SVG units
+            const ey = (pr.top + 18 - sr.top) * k; // header row
+            const ox = vx + Math.min(36, Math.max(14, Math.abs(ey - vy) * 0.35)); // elbow: diagonal out, then horizontal
+            line.setAttribute('points', `${vx.toFixed(2)},${vy.toFixed(2)} ${ox.toFixed(2)},${ey.toFixed(2)} ${(ex - 2).toFixed(2)},${ey.toFixed(2)}`);
+            line.style.opacity = String(seg(t, 2.0, 2.4));
+            if (termRef.current) {
+              termRef.current.setAttribute('x', (ex - 5).toFixed(2));
+              termRef.current.setAttribute('y', (ey - 3).toFixed(2));
+              termRef.current.style.opacity = line.style.opacity;
+            }
+          } else {
+            line.style.opacity = '0';
+            if (termRef.current) termRef.current.style.opacity = '0';
+          }
+        }
+      }
 
       // 4) nodes power up one by one with a quick flicker
       nodesRef.current.forEach((el, i) => {
@@ -228,7 +274,6 @@ export default function SkillReactor() {
   }, []);
 
   const fs = SKILLS[focus];
-  const [fx, fy] = pt(focus, R * fs.level);
 
   // Sweep trail: stacked wedges with falling opacity (no blur)
   const trail = Array.from({ length: 7 }).map((_, k) => {
@@ -260,7 +305,7 @@ export default function SkillReactor() {
         </div>
 
         <div className="relative w-full max-w-[520px] mx-auto aspect-square">
-          <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible" role="img" aria-label="Skill map: engineering and marketing">
+          <svg ref={svgRef} viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible" role="img" aria-label="Skill map: engineering and marketing">
             <defs>
               <pattern id="sr-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <line x1="0" y1="0" x2="0" y2="6" stroke={MKT} strokeWidth="1" strokeOpacity="0.6" />
@@ -302,13 +347,10 @@ export default function SkillReactor() {
             <polygon ref={buildRef} fill={ORANGE} fillOpacity="0" stroke={ORANGE} strokeWidth="1.2" strokeLinejoin="miter" style={{ pointerEvents: 'none' }} />
             <polygon ref={growRef} fill="url(#sr-hatch)" stroke={MKT} strokeWidth="1.2" strokeDasharray="5 4" strokeLinejoin="miter" style={{ pointerEvents: 'none', opacity: 0 }} />
 
-            {/* leader line toward the HUD panel */}
-            <polyline
-              className="hidden lg:inline"
-              points={`${fx},${fy} ${fx + (fx < C ? -18 : 18)},${fy - 18} ${SIZE + 28},${fy - 18}`}
-              fill="none" stroke={ORANGE} strokeWidth="1" strokeOpacity="0.7" style={{ pointerEvents: 'none' }}
-            />
-            <rect x={fx - 3} y={fy - 3} width={6} height={6} fill={ORANGE} style={{ pointerEvents: 'none' }} />
+            {/* leader: vertex anchor (enlarged, filled) → elbow → panel header; positioned every frame from the animated polygon */}
+            <polyline ref={leaderRef} fill="none" stroke={ORANGE} strokeWidth="1" style={{ pointerEvents: 'none', opacity: 0 }} data-leader />
+            <rect ref={termRef} width={6} height={6} fill={ORANGE} style={{ pointerEvents: 'none', opacity: 0 }} />
+            <rect ref={anchorRef} width={10} height={10} fill={ORANGE} stroke="#0a0a0a" strokeWidth="1.5" style={{ pointerEvents: 'none' }} data-anchor />
 
             <rect x={C - 42} y={C - 16} width={84} height={32} fill="#0a0a0a" stroke="#3a3a3a" />
             <text x={C} y={C - 2} textAnchor="middle" className="font-mono" fontSize="8.5" fill="#e5e5e5" letterSpacing="2">MARKETING</text>
@@ -331,8 +373,8 @@ export default function SkillReactor() {
                   aria-label={s.label}
                   onFocus={() => setPanel(i)}
                 >
-                  <rect x={x - 9} y={y - 9} width={18} height={18} transform={s.side === 'grow' ? `rotate(45 ${x} ${y})` : undefined}
-                    fill={on ? ORANGE : '#0a0a0a'} stroke={ORANGE} strokeWidth="1.2" strokeDasharray={s.side === 'grow' && !on ? '3 2' : undefined} />
+                  <rect x={x - 5} y={y - 5} width={10} height={10} transform={s.side === 'grow' ? `rotate(45 ${x} ${y})` : undefined}
+                    fill="#0a0a0a" stroke={on ? '#f4efe8' : '#5a5a5a'} strokeWidth="1" strokeDasharray={s.side === 'grow' ? '2 2' : undefined} />
                   <text ref={(el) => { labelsRef.current[i] = el; }} x={x} y={below ? y + 28 : y - 18} textAnchor="middle" className="font-mono" fontSize="10" letterSpacing="2" fill={on ? '#ffffff' : '#8a8a8a'}>
                     {s.short}
                   </text>
@@ -346,7 +388,7 @@ export default function SkillReactor() {
       </div>
 
       {/* HUD detail panel */}
-      <div className="min-w-0 brackets border border-[#2e2e2e] bg-black/60">
+      <div ref={panelRef} className="min-w-0 brackets border border-[#2e2e2e] bg-black/60">
         <div className="flex items-center justify-between px-4 py-2 border-b border-[#2e2e2e] font-mono text-[10px] tracking-[0.25em] text-gray-500 uppercase">
           <span>{fs.side === 'build' ? '■ build // engineering' : '◆ grow // marketing'}</span>
           <span>axis {String(focus + 1).padStart(2, '0')}/{N}</span>
