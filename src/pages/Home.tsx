@@ -4,6 +4,7 @@ import AnimatedGrid from '@/components/AnimatedGrid';
 import ImpactStrip from '@/components/ImpactStrip';
 import ProjectCarousel from '@/components/ProjectCarousel';
 import MediaHub from '@/components/MediaHub';
+import CinematicIntro from '@/components/CinematicIntro';
 import QuoteWall from '@/components/QuoteWall';
 import SkillAuthorityGrid from '@/components/SkillAuthorityGrid';
 import ContactCTA from '@/components/ContactCTA';
@@ -131,123 +132,7 @@ const GlitchText = ({ children, delay = 0, initialReveal = false }: { children: 
 
 const BOOT_SEEN_KEY = 'portfolio-boot-seen';
 
-const FADE_OUT_MS = 650;
 const HOLD_AFTER_LOGS_MS = 550;
-
-const StartupSequence = ({ onComplete }: { onComplete?: () => void }) => {
-  const [isComplete, setIsComplete] = React.useState(false);
-  const [fadingOut, setFadingOut] = React.useState(false);
-  const [text, setText] = React.useState('');
-  const [showGlitch, setShowGlitch] = React.useState(false);
-  const intervalRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fadeTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const glitchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const mountedRef = React.useRef(true);
-  const onCompleteRef = React.useRef(onComplete);
-  onCompleteRef.current = onComplete;
-  
-  // Simplified, faster text for better performance
-  const fullText = `> INITIALIZING NEURAL INTERFACE...
-> LOADING CORE MODULES...
-> ESTABLISHING CONNECTION...
-> BYPASSING SECURITY...
-> DECRYPTING DATA...
-> ACCESSING PROFILE...
-
-[SYSTEM STATUS]
----------------
-NEURAL LINK: ACTIVE
-CORE SYSTEMS: ONLINE
-SECURITY: MAXIMUM
-
-[PROFILE DATA]
--------------
-NAME: JULIAN STRUNZ
-ROLE: MARKETING ENGINEER // GAMEPLAY PROGRAMMER
-STATUS: ACTIVE
-
-> NEURAL INTERFACE STABILIZED
-> INITIATING DISPLAY...
-> ACCESS GRANTED_`;
-
-  React.useEffect(() => {
-    mountedRef.current = true;
-    let currentIndex = 0;
-    const CHUNK_SIZE = 12;   // chars per tick
-    const TICK_MS = 18;     // ~1s total for full text
-
-    const tick = () => {
-      if (!mountedRef.current) return;
-      if (currentIndex < fullText.length) {
-        const end = Math.min(currentIndex + CHUNK_SIZE, fullText.length);
-        currentIndex = end;
-        setText(fullText.slice(0, end));
-        if (Math.random() < 0.04) {
-          setShowGlitch(true);
-          if (glitchTimeoutRef.current) clearTimeout(glitchTimeoutRef.current);
-          glitchTimeoutRef.current = setTimeout(() => {
-            if (mountedRef.current) setShowGlitch(false);
-          }, 60);
-        }
-        intervalRef.current = window.setTimeout(tick, TICK_MS) as unknown as ReturnType<typeof setTimeout>;
-      } else {
-        if (intervalRef.current) clearTimeout(intervalRef.current);
-        intervalRef.current = null;
-        timeoutRef.current = window.setTimeout(() => {
-          if (mountedRef.current) setIsComplete(true);
-        }, HOLD_AFTER_LOGS_MS) as unknown as ReturnType<typeof setTimeout>;
-      }
-    };
-    intervalRef.current = window.setTimeout(tick, TICK_MS) as unknown as ReturnType<typeof setTimeout>;
-
-    return () => {
-      mountedRef.current = false;
-      if (intervalRef.current) clearTimeout(intervalRef.current);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
-      if (glitchTimeoutRef.current) clearTimeout(glitchTimeoutRef.current);
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (isComplete) {
-      try {
-        sessionStorage.setItem(BOOT_SEEN_KEY, 'true');
-      } catch (_) {}
-      setFadingOut(true);
-    }
-  }, [isComplete]);
-
-  React.useEffect(() => {
-    if (!fadingOut) return;
-    fadeTimeoutRef.current = window.setTimeout(() => {
-      onCompleteRef.current?.();
-    }, FADE_OUT_MS) as unknown as ReturnType<typeof setTimeout>;
-    return () => {
-      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current);
-    };
-  }, [fadingOut]);
-
-  return (
-    <motion.div
-      className="fixed inset-0 bg-cyber-black z-50 flex items-center justify-center pointer-events-none"
-      initial={{ opacity: 1 }}
-      animate={{ opacity: fadingOut ? 0 : 1 }}
-      transition={{ duration: FADE_OUT_MS / 1000, ease: [0.25, 0.46, 0.45, 0.94] }}
-    >
-      <div className="matrix-rain" />
-      <div className="relative max-w-3xl w-full mx-4">
-        <pre className={`font-mono text-primary whitespace-pre-wrap startup-text ${showGlitch ? 'startup-glitch' : ''}`}>
-          {text}
-        </pre>
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="scanline opacity-40 animate-pulse" />
-        </div>
-      </div>
-    </motion.div>
-  );
-};
 
 const TerminalText = ({ children, delay = 0 }: { children: string, delay?: number }) => {
   const [text, setText] = React.useState('');
@@ -358,12 +243,13 @@ const Home = ({ onPlayGame }: HomeProps) => {
     : { glitch: bootHoldPlusFadeStart, terminal: 1750, paragraph: 2.2, buttons: 2.6 };
 
   const handleBootComplete = React.useCallback(() => {
+    try { sessionStorage.setItem(BOOT_SEEN_KEY, 'true'); } catch (_) {}
     setHasSeenBoot(true);
   }, []);
 
   return (
     <div className="min-h-screen bg-cyber-black">
-      {!hasSeenBoot && <StartupSequence onComplete={handleBootComplete} />}
+      {!hasSeenBoot && <CinematicIntro onDone={handleBootComplete} />}
       {/* Scanline Effect */}
       <div className="scanline" />
 
