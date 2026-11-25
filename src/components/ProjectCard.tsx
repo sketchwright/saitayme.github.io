@@ -24,6 +24,7 @@ interface ProjectCardProps {
   isFeatured?: boolean;
   featuredIdleActive?: boolean;
   onHoverChange?: (hovered: boolean) => void;
+  compact?: boolean;
 }
 
 const ProjectCard = ({
@@ -33,6 +34,7 @@ const ProjectCard = ({
   isDimmed = false,
   isFeatured: _isFeatured = false,
   featuredIdleActive = false,
+  compact = false,
   onHoverChange,
 }: ProjectCardProps) => {
   const EngineIcon = project.category === 'Unity' ? DiUnitySmall : project.category === 'Marketing' ? MdCampaign : SiUnrealengine;
@@ -172,9 +174,9 @@ const ProjectCard = ({
       </div>
 
       {/* Content */}
-      <div className="p-6">
+      <div className={compact ? "p-4" : "p-6"}>
         <h3
-          className={`text-xl font-cyber mb-1 transition-all duration-300
+          className={`${compact ? "text-base" : "text-xl"} font-cyber mb-1 transition-all duration-300
             ${isSpotlight ? 'text-primary drop-shadow-[0_0_8px_rgba(240,126,65,0.4)]' : 'text-primary group-hover:text-primary/95'}
           `}
         >
@@ -190,7 +192,7 @@ const ProjectCard = ({
           {summary}
         </p>
 
-        {project.badge && (
+        {project.badge && !compact && (
           <div className="mb-4">
             <span
               className={`inline-flex items-center gap-2 px-2.5 py-1 rounded border font-mono text-[11px] uppercase tracking-wider transition-all duration-300
