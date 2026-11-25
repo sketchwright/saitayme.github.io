@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useInView } from 'framer-motion';
+import { ACCENT_MKT } from '@/theme';
 
 type Side = 'build' | 'grow';
 type Skill = {
@@ -61,7 +62,7 @@ const C = SIZE / 2;
 const ORBIT = 186;
 const NODE_R = 30;
 const ORANGE = '#f07e41';
-const YELLOW = '#e8e8e8'; // marketing side: light gray-white (brand: orange/black/white/gray)
+const YELLOW = ACCENT_MKT; // marketing side, see src/theme.ts
 const colorOf = (s: Side) => (s === 'build' ? ORANGE : YELLOW);
 
 function nodePos(i: number) {
@@ -245,9 +246,9 @@ export default function SkillReactor() {
             <AnimatePresence mode="wait">
               <motion.div
                 key={skill.id}
-                initial={{ opacity: 0, y: 8, filter: 'blur(3px)' }}
-                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, y: -8, filter: 'blur(3px)' }}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.25 }}
               >
                 <h4 className="font-cyber text-xl md:text-2xl mb-1" style={{ color: col }}>{skill.label}</h4>

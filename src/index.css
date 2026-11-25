@@ -1180,3 +1180,8 @@ html body .profile-typewriter span.profile-highlight[data-profile-segment="highl
 @media (prefers-reduced-motion: reduce) {
   .sr-spin-slow, .sr-spin-rev, .sr-spin-fast, .sr-flow, .sr-flow-fast, .sr-breathe, .sr-ping { animation: none; }
 }
+
+/* Home scroll cue */
+@keyframes scroll-cue-dash { 0% { top: -12px; } 100% { top: 32px; } }
+.scroll-cue-dash { animation: scroll-cue-dash 1.4s cubic-bezier(.6,0,.4,1) infinite; }
+@media (prefers-reduced-motion: reduce) { .scroll-cue-dash { animation: none; top: 10px; } }

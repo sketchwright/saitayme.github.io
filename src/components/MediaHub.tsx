@@ -148,9 +148,9 @@ export default function MediaHub() {
           <AnimatePresence mode="wait">
             <motion.div
               key={`${channel.id}-${activeIdx}`}
-              initial={{ opacity: 0, x: -14, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-              exit={{ opacity: 0, x: 14, filter: 'blur(4px)' }}
+              initial={{ opacity: 0, x: -14 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 14 }}
               transition={{ duration: 0.28 }}
             >
               <Spotlight item={active} />

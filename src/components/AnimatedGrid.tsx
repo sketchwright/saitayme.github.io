@@ -123,12 +123,29 @@ const AnimatedGrid = () => {
       }
 
       ctx.globalAlpha = 1;
-      frameIdRef.current = requestAnimationFrame(animate);
+      if (running) frameIdRef.current = requestAnimationFrame(animate);
     };
 
-    frameIdRef.current = requestAnimationFrame(animate);
+    // Only run while the hero is on screen and the tab is visible (perf: no work during scroll below the fold)
+    let running = false;
+    const start = () => {
+      if (running || document.hidden) return;
+      running = true;
+      frameIdRef.current = requestAnimationFrame(animate);
+    };
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(frameIdRef.current);
+    };
+    const io = new IntersectionObserver(([e]) => (e.isIntersecting ? start() : stop()), { threshold: 0 });
+    io.observe(canvas);
+    const onVis = () => (document.hidden ? stop() : start());
+    document.addEventListener('visibilitychange', onVis);
 
     return () => {
+      io.disconnect();
+      document.removeEventListener('visibilitychange', onVis);
+      stop();
       window.removeEventListener('resize', resizeCanvas);
       if (frameIdRef.current) {
         cancelAnimationFrame(frameIdRef.current);

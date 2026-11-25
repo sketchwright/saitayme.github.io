@@ -121,6 +121,8 @@ const ProjectCard = ({
           <img
             src={project.thumbnail}
             alt={project.title}
+            loading="lazy"
+            decoding="async"
             className={`w-full h-full transition-none object-center ${isLogoThumb ? 'object-contain p-4' : 'object-cover'}`}
             style={{ display: 'block', minWidth: '100%', minHeight: '100%', objectPosition: project.thumbnailPosition }}
           />
@@ -153,12 +155,12 @@ const ProjectCard = ({
             </span>
           )}
           {project.projectType && (
-            <span className="bg-cyber-dark/90 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-mono text-gray-300 border border-primary/20">
+            <span className="bg-cyber-dark/95 px-2 py-0.5 rounded text-xs font-mono text-gray-300 border border-primary/20">
               {PROJECT_TYPE_LABELS[project.projectType] ?? project.projectType}
             </span>
           )}
           {project.isSecret && (
-            <span className="bg-primary/20 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-cyber text-primary border border-primary/30">
+            <span className="bg-primary/25 px-2 py-0.5 rounded text-xs font-cyber text-primary border border-primary/30">
               SECRET
             </span>
           )}

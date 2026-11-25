@@ -8,7 +8,7 @@ import { projects } from '@/data/projects';
 const DRIFT_PIXELS_PER_SEC = 12;
 const CAROUSEL_PAUSE_ON_HOVER = true;
 
-function CarouselCard({ project, index }: { project: Project; index: number }) {
+function CarouselCard({ project }: { project: Project }) {
   const firstImpact = project.headline ?? project.impact?.[0] ?? project.shortDescription ?? project.description.slice(0, 60);
   const secondImpact = project.badge;
 
@@ -16,10 +16,6 @@ function CarouselCard({ project, index }: { project: Project; index: number }) {
     <Link to="/projects" className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">
       <motion.article
         className="relative h-full rounded-xl border border-primary/30 bg-cyber-dark/90 overflow-hidden flex flex-col w-[300px] flex-shrink-0"
-        initial={{ opacity: 0, y: 20 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ once: true }}
-        transition={{ duration: 0.5, delay: index * 0.08 }}
         whileHover={{
           y: -8,
           transition: { duration: 0.3, ease: 'easeOut' },
@@ -39,11 +35,12 @@ function CarouselCard({ project, index }: { project: Project; index: number }) {
               className={`w-full h-full ${/mayhem\/logo|ingame-studios|nerd-monkeys/.test(project.thumbnail) ? 'object-contain p-6' : 'object-cover'}`}
               style={{ objectPosition: project.thumbnailPosition }}
               loading="lazy"
+              decoding="async"
             />
           </motion.div>
           <div className="absolute inset-0 bg-gradient-to-t from-cyber-black via-transparent to-transparent opacity-80" />
           <div className="absolute bottom-2 left-3 right-3 flex flex-col gap-0.5">
-            <div className="inline-flex w-fit max-w-full flex-col gap-0.5 rounded-md border border-primary/50 border-l-4 border-l-primary bg-black/40 px-3 py-1.5 shadow-[0_0_18px_rgba(240,126,65,0.18),0_2px_12px_rgba(0,0,0,0.6)] backdrop-blur-sm">
+            <div className="inline-flex w-fit max-w-full flex-col gap-0.5 rounded-md border border-primary/50 border-l-4 border-l-primary bg-black/75 px-3 py-1.5 shadow-[0_0_18px_rgba(240,126,65,0.18),0_2px_12px_rgba(0,0,0,0.6)]">
               <h3 className="font-cyber text-lg text-white leading-tight tracking-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{project.title}</h3>
               <p className="text-xs text-primary font-mono uppercase tracking-wider drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]">{project.category}</p>
             </div>
@@ -145,7 +142,7 @@ export default function ProjectCarousel() {
           >
             {[...featured, ...featured, ...featured].map((project, i) => (
               <div key={`${project.id}-${i}`} className="flex-shrink-0 flex justify-center">
-                <CarouselCard project={project} index={i % featured.length} />
+                <CarouselCard project={project} />
               </div>
             ))}
           </motion.div>

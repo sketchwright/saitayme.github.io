@@ -1,89 +1,86 @@
 import { useRef } from 'react';
-import { motion, useScroll, useSpring, useTransform } from 'framer-motion';
+import { motion, useScroll, useSpring } from 'framer-motion';
+import { ACCENT_MKT, BRAND_ORANGE } from '@/theme';
 
 type Stop = {
   when: string;
-  title: string;
+  role: string;
   org: string;
+  line: string;
   track: 'build' | 'grow' | 'edu';
-  lines: string[];
   now?: boolean;
 };
 
+/** Newest first. One short line per stop so a recruiter can skim it in ~5 seconds. */
 const STOPS: Stop[] = [
-  { when: '2022 – 2025', title: 'BSc Mediatechnology & Design', org: 'FH Hagenberg', track: 'edu', lines: ['Games, media and web engineering', 'Game jams: Scalien (GMTK 2024), Five Nights at Furbys'] },
-  { when: 'Mar – Jun 2025', title: 'Game Developer', org: 'nerdmonkeys', track: 'build', lines: ['NOK sound system, Unity editor tools', 'Client work for the Portuguese Red Cross'] },
-  { when: 'Oct 2025', title: 'Game Developer', org: 'Ingame Studios', track: 'build', lines: ['50+ fixes in Crime Boss Update 20', 'ModKit moddability, EOS multiplayer framework'] },
-  { when: '2026', title: 'ModKit tutorials & streams', org: 'Crime Boss community', track: 'grow', lines: ['11-part tutorial series + docs site', 'The content worked, so marketing came calling'] },
-  { when: 'Oct 2026 →', title: 'Marketing Engineer', org: 'Ingame Studios · Mayhem À La Carte', track: 'grow', now: true, lines: ['Social, reveal, creators, streams, website', 'Built IGS Outreach and an agentic content pipeline', 'Still shipping code: recipe pipeline, co-op framework'] },
+  { when: 'Oct 2026 – now', role: 'Marketing Engineer', org: 'Ingame Studios', track: 'grow', now: true, line: 'Mayhem À La Carte marketing + the tools behind it (IGS Outreach, AI content pipeline).' },
+  { when: '2026', role: 'ModKit tutorials & streams', org: 'Crime Boss: Rockay City', track: 'grow', line: '11-part tutorial series and website; the content worked, so marketing came calling.' },
+  { when: 'Oct 2025 – Sep 2026', role: 'Game Developer', org: 'Ingame Studios', track: 'build', line: '50+ fixes in Crime Boss Update 20, ModKit moddability, EOS multiplayer.' },
+  { when: 'Mar – Jun 2025', role: 'Game Developer', org: 'nerdmonkeys', track: 'build', line: 'NOK sound system, Unity tools, Red Cross client project.' },
+  { when: '2022 – 2025', role: 'BSc Mediatechnology & Design', org: 'FH Hagenberg', track: 'edu', line: 'Games, media and web engineering.' },
 ];
 
-const TRACK_COLOR = { build: '#f07e41', grow: '#e8e8e8', edu: '#6b7280' } as const;
-const TRACK_LABEL = { build: 'BUILD', grow: 'GROW', edu: 'LEARN' } as const;
+const TRACK_COLOR = { build: BRAND_ORANGE, grow: ACCENT_MKT, edu: '#6b7280' } as const;
+
+/** Single source of truth for the rail's x position: line, fill and dots all use it. */
+const RAIL = 11; // px from the left edge of the list
 
 export default function CareerTimeline() {
-  const ref = useRef<HTMLDivElement>(null);
-  const { scrollYProgress } = useScroll({ target: ref, offset: ['start 80%', 'end 60%'] });
-  const fill = useSpring(useTransform(scrollYProgress, [0, 1], [0, 1]), { stiffness: 120, damping: 24 });
+  const ref = useRef<HTMLOListElement>(null);
+  const { scrollYProgress } = useScroll({ target: ref, offset: ['start 85%', 'end 55%'] });
+  const fill = useSpring(scrollYProgress, { stiffness: 120, damping: 24 });
 
   return (
-    <div ref={ref} className="relative">
-      {/* spine */}
-      <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px bg-primary/15 md:-translate-x-1/2" />
-      <motion.div
-        className="absolute left-4 md:left-1/2 top-0 w-[2px] md:-translate-x-1/2 origin-top"
-        style={{ scaleY: fill, height: '100%', background: 'linear-gradient(to bottom, #6b7280, #f07e41 55%, #ffffff)', boxShadow: '0 0 12px rgba(240,126,65,0.6)' }}
-      />
-      <ol className="space-y-8 md:space-y-10">
-        {STOPS.map((s, i) => {
-          const left = i % 2 === 0;
-          const c = TRACK_COLOR[s.track];
-          return (
-            <li key={s.when + s.title} className={`relative md:grid md:grid-cols-2 md:gap-12 ${i > 0 ? 'md:-mt-20' : ''}`}>
-              {/* node */}
+    <ol ref={ref} className="relative" style={{ ['--rail' as string]: `${RAIL}px` }}>
+      {/* base line */}
+      <span aria-hidden data-timeline-line className="absolute top-2 bottom-2 w-px bg-primary/20" style={{ left: 'var(--rail)', transform: 'translateX(-50%)' }} />
+      {/* scroll fill (scaleY only, so it never shifts horizontally) */}
+      <span aria-hidden className="absolute top-2 bottom-2 w-[2px]" style={{ left: 'var(--rail)', transform: 'translateX(-50%)' }}>
+        <motion.span
+          className="block w-full h-full origin-top"
+          style={{ scaleY: fill, background: `linear-gradient(to bottom, ${ACCENT_MKT}, ${BRAND_ORANGE} 55%, #6b7280)`, boxShadow: '0 0 10px rgba(240,126,65,0.55)' }}
+        />
+      </span>
+
+      {STOPS.map((s) => {
+        const c = TRACK_COLOR[s.track];
+        return (
+          <li key={s.when + s.role} className="relative py-3 pr-2" style={{ paddingLeft: 'calc(var(--rail) + 24px)' }}>
+            {/* dot: static centring wrapper, animated inner element */}
+            <span
+              aria-hidden
+              data-timeline-dot
+              className="absolute w-3.5 h-3.5"
+              style={{ left: 'var(--rail)', top: '1.55rem', transform: 'translate(-50%, -50%)' }}
+            >
               <motion.span
-                className="absolute left-4 md:left-1/2 top-3 -translate-x-1/2 w-4 h-4 rounded-full border-2 bg-cyber-black z-10"
+                className="block w-full h-full rounded-full border-2 bg-cyber-black"
                 style={{ borderColor: c }}
-                initial={{ scale: 0 }}
-                whileInView={{ scale: 1, boxShadow: `0 0 0 4px ${c}22, 0 0 16px ${c}` }}
-                viewport={{ once: true, margin: '-30% 0px -30% 0px' }}
-                transition={{ type: 'spring', stiffness: 300, damping: 15 }}
-              >
-                {s.now && <span className="absolute -inset-2 rounded-full border animate-ping" style={{ borderColor: c }} />}
-              </motion.span>
-              <motion.div
-                className={`pl-12 md:pl-0 ${left ? 'md:col-start-1 md:text-right md:pr-4' : 'md:col-start-2 md:pl-4'}`}
-                initial={{ opacity: 0, x: left ? -24 : 24 }}
-                whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: '-60px' }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-              >
-                <div
-                  className={`inline-block text-left rounded-lg border bg-black/50 p-4 md:p-5 w-full max-w-md transition-shadow hover:shadow-[0_0_24px_rgba(240,126,65,0.15)] ${s.now ? 'bg-primary/[0.06]' : ''}`}
-                  style={{ borderColor: `${c}55` }}
-                >
-                  <div className="flex items-center justify-between gap-3 mb-1">
-                    <span className="text-[11px] font-mono text-gray-400">{s.when}</span>
-                    <span className="text-[9px] font-cyber tracking-[0.25em] px-1.5 py-0.5 rounded" style={{ color: c, background: `${c}18` }}>
-                      {s.now ? 'NOW · ' : ''}{TRACK_LABEL[s.track]}
-                    </span>
-                  </div>
-                  <h4 className="font-cyber text-base md:text-lg" style={{ color: s.track === 'edu' ? '#e5e7eb' : c }}>{s.title}</h4>
-                  <p className="text-xs font-mono text-gray-400 mb-2">{s.org}</p>
-                  <ul className="space-y-1">
-                    {s.lines.map((l) => (
-                      <li key={l} className="text-sm text-gray-300 flex gap-2">
-                        <span style={{ color: c }}>›</span>
-                        <span>{l}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </motion.div>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+                initial={{ scale: 0.4, opacity: 0.4 }}
+                whileInView={{ scale: 1, opacity: 1, boxShadow: `0 0 0 3px ${c}22, 0 0 12px ${c}` }}
+                viewport={{ once: true, margin: '-35% 0px -35% 0px' }}
+                transition={{ type: 'spring', stiffness: 320, damping: 16 }}
+              />
+              {s.now && <span className="absolute inset-[-5px] rounded-full border animate-ping" style={{ borderColor: c }} />}
+            </span>
+
+            <div className={`grid grid-cols-1 sm:grid-cols-[150px_minmax(0,1fr)] gap-x-5 gap-y-0.5 items-baseline rounded-lg px-3 py-2 ${s.now ? 'bg-primary/[0.07] ring-1 ring-primary/40' : ''}`}>
+              <span className="text-xs font-mono text-gray-500 whitespace-nowrap">
+                {s.when}
+                {s.now && <span className="ml-2 text-[9px] font-cyber tracking-[0.2em] px-1.5 py-0.5 rounded bg-primary text-cyber-black align-middle">NOW</span>}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[15px] leading-snug">
+                  <span className="font-semibold text-white">{s.role}</span>
+                  <span className="text-gray-600"> · </span>
+                  <span className="text-primary">{s.org}</span>
+                </p>
+                <p className="text-sm text-gray-400 leading-snug">{s.line}</p>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
   );
 }

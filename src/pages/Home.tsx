@@ -1,4 +1,4 @@
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { AnimatePresence, motion, useScroll, useTransform } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import AnimatedGrid from '@/components/AnimatedGrid';
 import ImpactStrip from '@/components/ImpactStrip';
@@ -9,108 +9,57 @@ import SkillAuthorityGrid from '@/components/SkillAuthorityGrid';
 import ContactCTA from '@/components/ContactCTA';
 import React from 'react';
 
-/** Cyberpunk scroll-invite: plays once after hero intro + short static pause */
-const SCROLL_INVITE_DELAY_FIRST = 5000;  // after boot: name + static
-const SCROLL_INVITE_DELAY_RETURN = 3000; // return visit: content + static
+/** Subtle scroll cue: shown once per session, pinned to the viewport bottom, hidden if it would overlap content. */
+const SCROLL_INVITE_DELAY_FIRST = 4200; // after boot + name reveal
+const SCROLL_INVITE_DELAY_RETURN = 1200;
+const SCROLL_CUE_SEEN_KEY = 'portfolio-scroll-cue-seen';
+const SCROLL_CUE_LIFETIME_MS = 4000;
 
-function ScrollInvite() {
-  const { scrollYProgress } = useScroll();
-  const [exiting, setExiting] = React.useState(false);
-  const [hidden, setHidden] = React.useState(false);
+function ScrollInvite({ avoidRef }: { avoidRef: React.RefObject<HTMLElement> }) {
+  const [visible, setVisible] = React.useState(true);
+  const [fits, setFits] = React.useState(true);
+
   React.useEffect(() => {
-    const unsub = scrollYProgress.on('change', (v) => {
-      if (v > 0.06) setExiting(true);
-    });
-    return () => unsub();
-  }, [scrollYProgress]);
-  if (hidden) return null;
+    try { sessionStorage.setItem(SCROLL_CUE_SEEN_KEY, 'true'); } catch (_) {}
+    // Only show if there is real empty space between the hero content and the viewport bottom.
+    const check = () => {
+      const el = avoidRef.current;
+      if (!el) return;
+      const bottom = el.getBoundingClientRect().bottom;
+      setFits(window.innerHeight - bottom > 72);
+    };
+    check();
+    const hide = () => setVisible(false);
+    const t = setTimeout(hide, SCROLL_CUE_LIFETIME_MS);
+    window.addEventListener('scroll', hide, { passive: true, once: true });
+    window.addEventListener('resize', check);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('scroll', hide);
+      window.removeEventListener('resize', check);
+    };
+  }, [avoidRef]);
+
   return (
-    <motion.div
-      className="absolute inset-x-0 bottom-10 z-20 flex justify-center"
-      initial={{ opacity: 0, y: 32 }}
-      animate={
-        exiting
-          ? { opacity: 0, y: 48, scale: 0.96 }
-          : { opacity: 1, y: 0, scale: 1 }
-      }
-      transition={{
-        duration: exiting ? 0.5 : 0.55,
-        ease: exiting ? [0.4, 0, 0.2, 1] : [0.34, 1.56, 0.64, 1],
-      }}
-      onAnimationComplete={() => {
-        if (exiting) setHidden(true);
-      }}
-    >
-      {/* Panel: punchy “neon on” — scale pop + quick flicker */}
-      <motion.div
-        className="relative rounded-lg border border-primary/40 bg-cyber-black/95 backdrop-blur-sm px-5 pt-4 pb-3 min-w-[200px]"
-        initial={{ opacity: 0, scale: 0.82 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{
-          type: 'spring',
-          stiffness: 380,
-          damping: 22,
-          mass: 0.8,
-        }}
-        style={{
-          boxShadow: '0 0 0 1px rgba(240,126,65,0.15), 0 0 24px rgba(240,126,65,0.08)',
-        }}
-      >
-        {/* Neon “flicker on” — quick flash then settle */}
+    <AnimatePresence>
+      {visible && fits && (
         <motion.div
-          className="absolute inset-0 pointer-events-none rounded-lg"
-          initial={{ opacity: 0 }}
-          animate={{
-            opacity: [0, 0.9, 0.15, 0],
-          }}
-          transition={{
-            duration: 0.35,
-            times: [0, 0.15, 0.4, 1],
-          }}
-          style={{
-            boxShadow: 'inset 0 0 48px rgba(240,126,65,0.35)',
-          }}
-        />
-
-        {/* Scanning beam — runs down continuously */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div
-            className="scroll-invite-scan absolute left-0 right-0 w-full h-8"
-            style={{
-              background: 'linear-gradient(to bottom, transparent, rgba(240,126,65,0.35), transparent)',
-              boxShadow: '0 0 20px rgba(240,126,65,0.4)',
-            }}
-          />
-        </div>
-
-        {/* Terminal-style prompt + label */}
-        <div className="relative flex flex-col items-center gap-2">
-          <div className="flex items-center justify-center gap-2">
-            <span className="font-mono text-primary text-sm">»</span>
-            <span className="font-cyber text-primary uppercase tracking-[0.25em] text-xs neon-text">
-              Scroll to explore
+          className="fixed inset-x-0 bottom-5 z-20 flex justify-center pointer-events-none"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 8 }}
+          transition={{ duration: 0.45, ease: 'easeOut' }}
+          aria-hidden
+        >
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="font-mono text-[9px] uppercase tracking-[0.35em] text-primary/60">scroll</span>
+            <span className="relative block w-px h-8 overflow-hidden bg-primary/15">
+              <span className="scroll-cue-dash absolute left-0 w-px h-3 bg-primary shadow-[0_0_6px_rgba(240,126,65,0.9)]" />
             </span>
-            <motion.span
-              className="inline-block w-0.5 h-3.5 bg-primary"
-              animate={{ opacity: [1, 0] }}
-              transition={{ duration: 0.6, repeat: Infinity, repeatDelay: 0.4 }}
-            />
           </div>
-          {/* Downward chevrons — clear “scroll down” cue */}
-          <div className="flex flex-col items-center gap-0.5 text-primary/90">
-            <span className="scroll-invite-chevron text-lg leading-none" style={{ textShadow: '0 0 8px rgba(240,126,65,0.5)' }}>▼</span>
-            <span className="scroll-invite-chevron scroll-invite-chevron-2 text-sm leading-none opacity-80">▼</span>
-            <span className="scroll-invite-chevron scroll-invite-chevron-3 text-xs leading-none opacity-60">▼</span>
-          </div>
-        </div>
-
-        {/* Subtle corner accents — matches hero, not heavy HUD */}
-        <div className="absolute top-1.5 left-1.5 w-2 h-2 border-l border-t border-primary/50 rounded-tl" />
-        <div className="absolute top-1.5 right-1.5 w-2 h-2 border-r border-t border-primary/50 rounded-tr" />
-        <div className="absolute bottom-1.5 left-1.5 w-2 h-2 border-l border-b border-primary/50 rounded-bl" />
-        <div className="absolute bottom-1.5 right-1.5 w-2 h-2 border-r border-b border-primary/50 rounded-br" />
-      </motion.div>
-    </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -366,11 +315,14 @@ const Home = ({ onPlayGame }: HomeProps) => {
     return sessionStorage.getItem(BOOT_SEEN_KEY) === 'true';
   });
   const [showScrollInvite, setShowScrollInvite] = React.useState(false);
+  const heroContentRef = React.useRef<HTMLDivElement>(null);
   const initialHadSeenBoot = React.useRef(hasSeenBoot);
 
   // After name anim + 1–2s static, show scroll-invite once
   React.useEffect(() => {
     if (!hasSeenBoot) return;
+    try { if (sessionStorage.getItem(SCROLL_CUE_SEEN_KEY) === 'true') return; } catch (_) {}
+    if (window.scrollY > 40) return;
     const delay = initialHadSeenBoot.current ? SCROLL_INVITE_DELAY_RETURN : SCROLL_INVITE_DELAY_FIRST;
     const t = setTimeout(() => setShowScrollInvite(true), delay);
     return () => clearTimeout(t);
@@ -420,7 +372,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: heroDuration, delay: heroDelay, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="min-h-screen md:h-screen flex flex-col justify-between relative overflow-hidden"
+        className="min-h-[88svh] md:h-[88vh] flex flex-col justify-between relative overflow-hidden"
       >
         {/* Animated Grid Background */}
         <AnimatedGrid />
@@ -502,11 +454,11 @@ const Home = ({ onPlayGame }: HomeProps) => {
         </div>
 
         {/* Tags at bottom edge of hero — existing ImpactStrip moved here */}
-        <div className="relative z-10 pb-4">
+        <div ref={heroContentRef} className="relative z-10 pb-4">
           <ImpactStrip compact={true} />
         </div>
 
-        {showScrollInvite && <ScrollInvite />}
+        {showScrollInvite && <ScrollInvite avoidRef={heroContentRef} />}
       </motion.section>
 
       {/* Scroll progress — rewards scrolling with a filling bar */}
