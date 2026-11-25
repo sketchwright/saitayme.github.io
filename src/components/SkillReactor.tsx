@@ -60,9 +60,9 @@ const SKILLS: Skill[] = [
 const SIZE = 520;
 const C = SIZE / 2;
 const ORBIT = 186;
-const NODE_R = 30;
 const ORANGE = '#f07e41';
 const YELLOW = ACCENT_MKT; // marketing side, see src/theme.ts
+const GRID = '#262626';
 const colorOf = (s: Side) => (s === 'build' ? ORANGE : YELLOW);
 
 function nodePos(i: number) {
@@ -95,105 +95,87 @@ export default function SkillReactor() {
       <div className="relative w-full max-w-[520px] mx-auto aspect-square px-5" onMouseLeave={() => setUserHold(false)}>
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="w-full h-full overflow-visible" role="img" aria-label="Skill map: engineering and marketing">
           <defs>
-            <radialGradient id="sr-core" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={ORANGE} stopOpacity="0.55" />
-              <stop offset="60%" stopColor={ORANGE} stopOpacity="0.08" />
-              <stop offset="100%" stopColor={ORANGE} stopOpacity="0" />
-            </radialGradient>
-            <linearGradient id="sr-split" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor={ORANGE} />
-              <stop offset="100%" stopColor={YELLOW} />
-            </linearGradient>
-            <filter id="sr-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="3" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
+            <pattern id="sr-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <line x1="0" y1="0" x2="0" y2="6" stroke={YELLOW} strokeWidth="1" strokeOpacity="0.55" />
+            </pattern>
           </defs>
 
-          {/* Ambient core glow */}
-          <circle cx={C} cy={C} r={170} fill="url(#sr-core)" className="sr-breathe" />
-
-          {/* Rotating HUD rings */}
+          {/* Grid: concentric dashed rings + spokes, no glow */}
+          {[1, 0.75, 0.5, 0.25].map((k) => (
+            <circle key={k} cx={C} cy={C} r={ORBIT * k} fill="none" stroke={GRID} strokeWidth="1" strokeDasharray="3 5" />
+          ))}
+          {SKILLS.map((_, i) => {
+            const p = nodePos(i);
+            return <line key={`sp-${i}`} x1={C} y1={C} x2={p.x} y2={p.y} stroke={GRID} strokeWidth="1" strokeDasharray="3 5" />;
+          })}
+          {/* slow outer tick ring */}
           <g className="sr-spin-slow" style={{ transformOrigin: `${C}px ${C}px` }}>
-            <circle cx={C} cy={C} r={ORBIT + 42} fill="none" stroke={ORANGE} strokeOpacity="0.18" strokeWidth="1" strokeDasharray="2 10" />
-            {Array.from({ length: 48 }).map((_, i) => {
-              const a = (i / 48) * Math.PI * 2;
-              const r1 = ORBIT + 50;
-              const r2 = ORBIT + (i % 4 === 0 ? 60 : 55);
-              return <line key={i} x1={C + r1 * Math.cos(a)} y1={C + r1 * Math.sin(a)} x2={C + r2 * Math.cos(a)} y2={C + r2 * Math.sin(a)} stroke={ORANGE} strokeOpacity={i % 4 === 0 ? 0.45 : 0.18} strokeWidth="1" />;
+            {Array.from({ length: 72 }).map((_, i) => {
+              const a = (i / 72) * Math.PI * 2;
+              const r1 = ORBIT + 46;
+              const r2 = ORBIT + (i % 6 === 0 ? 56 : 50);
+              return <line key={i} x1={C + r1 * Math.cos(a)} y1={C + r1 * Math.sin(a)} x2={C + r2 * Math.cos(a)} y2={C + r2 * Math.sin(a)} stroke={i % 6 === 0 ? '#3a3a3a' : GRID} strokeWidth="1" />;
             })}
           </g>
-          <g className="sr-spin-rev" style={{ transformOrigin: `${C}px ${C}px` }}>
-            <circle cx={C} cy={C} r={ORBIT} fill="none" stroke="url(#sr-split)" strokeOpacity="0.35" strokeWidth="1.2" strokeDasharray="40 14 4 14" />
-          </g>
-          <circle cx={C} cy={C} r={92} fill="none" stroke={ORANGE} strokeOpacity="0.25" strokeWidth="1" strokeDasharray="1 6" className="sr-spin-fast" style={{ transformOrigin: `${C}px ${C}px` }} />
 
-          {/* Split axis */}
-          <line x1={C} y1={C - ORBIT - 30} x2={C} y2={C + ORBIT + 30} stroke={ORANGE} strokeOpacity="0.15" strokeDasharray="3 6" />
-          <text x={-6} y={C} textAnchor="middle" transform={`rotate(-90 -6 ${C})`} className="font-cyber" fontSize="13" fill={ORANGE} letterSpacing="6">BUILD</text>
-          <text x={SIZE + 6} y={C} textAnchor="middle" transform={`rotate(90 ${SIZE + 6} ${C})`} className="font-cyber" fontSize="13" fill={YELLOW} letterSpacing="6">GROW</text>
+          {/* Split axis + side labels */}
+          <line x1={C} y1={C - ORBIT - 36} x2={C} y2={C + ORBIT + 36} stroke={GRID} strokeWidth="1" strokeDasharray="3 5" />
+          <text x={C - 12} y={22} textAnchor="end" className="font-mono" fontSize="10" fill="#8a8a8a" letterSpacing="3">BUILD · ENGINEERING</text>
+          <text x={C + 12} y={22} textAnchor="start" className="font-mono" fontSize="10" fill="#8a8a8a" letterSpacing="3">GROW · MARKETING</text>
 
-          {/* Energy links */}
-          {SKILLS.map((s, i) => {
-            const p = nodePos(i);
-            const on = i === active;
-            const c = colorOf(s.side);
-            const mx = (C + p.x) / 2 + (p.y - C) * 0.18;
-            const my = (C + p.y) / 2 - (p.x - C) * 0.18;
-            const d = `M${p.x},${p.y} Q${mx},${my} ${C},${C}`;
+          {/* Shapes: BUILD = solid 16% fill, GROW = dashed outline + 45° hatch */}
+          {(['build', 'grow'] as Side[]).map((side) => {
+            const pts = SKILLS.map((sk, i) => ({ sk, i }))
+              .filter(({ sk }) => sk.side === side)
+              .map(({ sk, i }) => {
+                const pos = nodePos(i);
+                const k = sk.level;
+                return `${C + (pos.x - C) * k},${C + (pos.y - C) * k}`;
+              });
+            const points = [`${C},${C}`, ...pts].join(' ');
+            const isBuild = side === 'build';
             return (
-              <g key={`l-${s.id}`}>
-                <motion.path
-                  d={d}
-                  fill="none"
-                  stroke={c}
-                  strokeOpacity={on ? 0.9 : 0.22}
-                  strokeWidth={on ? 2.2 : 1}
-                  initial={{ pathLength: 0 }}
-                  animate={{ pathLength: inView ? 1 : 0 }}
-                  transition={{ duration: 0.9, delay: 0.3 + i * 0.06, ease: 'easeOut' }}
-                />
-                <path d={d} fill="none" stroke={c} strokeWidth={on ? 3 : 1.6} strokeLinecap="round" strokeDasharray="3 22" className={on ? 'sr-flow-fast' : 'sr-flow'} opacity={inView ? (on ? 1 : 0.55) : 0} filter={on ? 'url(#sr-glow)' : undefined} />
-              </g>
+              <motion.polygon
+                key={side}
+                points={points}
+                fill={isBuild ? ORANGE : 'url(#sr-hatch)'}
+                fillOpacity={isBuild ? 0.16 : 1}
+                stroke={isBuild ? ORANGE : YELLOW}
+                strokeWidth="1.2"
+                strokeDasharray={isBuild ? undefined : '5 4'}
+                strokeLinejoin="miter"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={inView ? { scale: 1, opacity: 1 } : {}}
+                style={{ transformOrigin: `${C}px ${C}px` }}
+                transition={{ duration: 0.9, delay: isBuild ? 0.2 : 0.35, ease: [0.22, 1, 0.36, 1] }}
+              />
             );
           })}
 
-          {/* Core */}
-          <g filter="url(#sr-glow)">
-            <motion.polygon
-              points={Array.from({ length: 6 }).map((_, k) => {
-                const a = (k / 6) * Math.PI * 2 - Math.PI / 2;
-                return `${C + 64 * Math.cos(a)},${C + 64 * Math.sin(a)}`;
-              }).join(' ')}
-              fill="#0a0a0a"
-              stroke={col}
-              strokeWidth="2.5"
-              initial={{ scale: 0 }}
-              animate={{ scale: inView ? 1 : 0 }}
-              style={{ transformOrigin: `${C}px ${C}px` }}
-              transition={{ type: 'spring', stiffness: 180, damping: 14, delay: 0.1 }}
-            />
-          </g>
-          <text x={C} y={C - 8} textAnchor="middle" className="font-cyber" fontSize="11" fill="#fff" letterSpacing="2">MARKETING</text>
-          <text x={C} y={C + 9} textAnchor="middle" className="font-cyber" fontSize="11" fill="#fff" letterSpacing="2">ENGINEER</text>
-          <text x={C} y={C + 28} textAnchor="middle" className="font-mono" fontSize="9" fill={col}>{'< build × grow >'}</text>
+          {/* Active spoke */}
+          {(() => {
+            const pa = nodePos(active);
+            return <line x1={C} y1={C} x2={pa.x} y2={pa.y} stroke={col} strokeWidth="1.2" strokeDasharray={skill.side === 'grow' ? '5 4' : undefined} />;
+          })()}
 
-          {/* Nodes */}
+          {/* Core */}
+          <rect x={C - 46} y={C - 20} width={92} height={40} fill="#0a0a0a" stroke="#3a3a3a" strokeWidth="1" />
+          <text x={C} y={C - 3} textAnchor="middle" className="font-mono" fontSize="9" fill="#e5e5e5" letterSpacing="2">MARKETING</text>
+          <text x={C} y={C + 10} textAnchor="middle" className="font-mono" fontSize="9" fill="#e5e5e5" letterSpacing="2">ENGINEER</text>
+
+          {/* Nodes: BUILD = squares, GROW = diamonds */}
           {SKILLS.map((s, i) => {
             const p = nodePos(i);
             const on = i === active;
             const c = colorOf(s.side);
-            const circ = 2 * Math.PI * (NODE_R + 6);
             const labelBelow = p.y > C;
+            const half = 11;
             return (
               <motion.g
                 key={s.id}
-                initial={{ x: C - p.x, y: C - p.y, opacity: 0 }}
-                animate={inView ? { x: 0, y: 0, opacity: 1 } : {}}
-                transition={{ type: 'spring', stiffness: 120, damping: 16, delay: 0.25 + i * 0.07 }}
+                initial={{ opacity: 0 }}
+                animate={inView ? { opacity: 1 } : {}}
+                transition={{ duration: 0.4, delay: 0.5 + i * 0.06 }}
                 style={{ cursor: 'pointer' }}
                 onMouseEnter={() => { setActive(i); setUserHold(true); }}
                 onClick={() => { setActive(i); setUserHold(true); }}
@@ -202,29 +184,23 @@ export default function SkillReactor() {
                 aria-label={s.label}
                 onFocus={() => { setActive(i); setUserHold(true); }}
               >
-                {on && <circle cx={p.x} cy={p.y} r={NODE_R + 16} fill={c} opacity="0.12" className="sr-ping" style={{ transformOrigin: `${p.x}px ${p.y}px` }} />}
-                {/* gauge track + level arc */}
-                <circle cx={p.x} cy={p.y} r={NODE_R + 6} fill="none" stroke={c} strokeOpacity="0.15" strokeWidth="3" />
-                <motion.circle
-                  cx={p.x}
-                  cy={p.y}
-                  r={NODE_R + 6}
-                  fill="none"
+                <rect x={p.x - 22} y={p.y - 22} width={44} height={44} fill="transparent" />
+                <rect
+                  x={p.x - half}
+                  y={p.y - half}
+                  width={half * 2}
+                  height={half * 2}
+                  transform={s.side === 'grow' ? `rotate(45 ${p.x} ${p.y})` : undefined}
+                  fill={on ? c : '#0a0a0a'}
                   stroke={c}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={circ}
-                  initial={{ strokeDashoffset: circ }}
-                  animate={{ strokeDashoffset: inView ? circ * (1 - s.level) : circ }}
-                  transition={{ duration: 1.2, delay: 0.6 + i * 0.07, ease: 'easeOut' }}
-                  transform={`rotate(-90 ${p.x} ${p.y})`}
-                  filter={on ? 'url(#sr-glow)' : undefined}
+                  strokeWidth="1.2"
+                  strokeDasharray={s.side === 'grow' && !on ? '3 2' : undefined}
+                  style={{ transition: 'fill 0.2s' }}
                 />
-                <circle cx={p.x} cy={p.y} r={NODE_R} fill={on ? c : '#0d0d0d'} stroke={c} strokeOpacity={on ? 1 : 0.6} strokeWidth="1.5" style={{ transition: 'fill 0.25s' }} />
-                <text x={p.x} y={p.y + 4} textAnchor="middle" className="font-mono" fontSize="11" fontWeight={700} fill={on ? '#0a0a0a' : c}>
+                <text x={p.x} y={p.y + 3.5} textAnchor="middle" className="font-mono" fontSize="9" fontWeight={700} fill={on ? '#0a0a0a' : c}>
                   {String(i + 1).padStart(2, '0')}
                 </text>
-                <text x={p.x} y={labelBelow ? p.y + NODE_R + 26 : p.y - NODE_R - 16} textAnchor="middle" className="font-cyber" fontSize="10.5" letterSpacing="1.5" fill={on ? '#fff' : c} fillOpacity={on ? 1 : 0.85}>
+                <text x={p.x} y={labelBelow ? p.y + 32 : p.y - 22} textAnchor="middle" className="font-mono" fontSize="10" letterSpacing="2" fill={on ? '#ffffff' : '#8a8a8a'}>
                   {s.short}
                 </text>
               </motion.g>
@@ -235,10 +211,10 @@ export default function SkillReactor() {
 
       {/* Readout panel */}
       <div className="min-w-0">
-        <div className="relative rounded-xl border bg-black/60 overflow-hidden" style={{ borderColor: `${col}66`, boxShadow: `0 0 32px ${col}1f` }}>
+        <div className="relative rounded-xl border bg-black/60 overflow-hidden" style={{ borderColor: '#2e2e2e' }}>
           <div className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: `${col}33` }}>
             <span className="text-[10px] font-mono uppercase tracking-[0.25em]" style={{ color: col }}>
-              {skill.side === 'build' ? '◀ build // engineering' : 'grow // marketing ▶'}
+              {skill.side === 'build' ? '■ build // engineering' : '◆ grow // marketing'}
             </span>
             <span className="text-[10px] font-mono text-gray-500">node {String(active + 1).padStart(2, '0')}/{SKILLS.length}</span>
           </div>
@@ -253,7 +229,7 @@ export default function SkillReactor() {
               >
                 <h4 className="font-cyber text-xl md:text-2xl mb-1" style={{ color: col }}>{skill.label}</h4>
                 <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden mb-4">
-                  <motion.div className="h-full rounded-full" style={{ background: col, boxShadow: `0 0 12px ${col}` }} initial={{ width: 0 }} animate={{ width: `${skill.level * 100}%` }} transition={{ duration: 0.6, ease: 'easeOut' }} />
+                  <motion.div className="h-full rounded-full" style={{ background: col }} initial={{ width: 0 }} animate={{ width: `${skill.level * 100}%` }} transition={{ duration: 0.6, ease: 'easeOut' }} />
                 </div>
                 <ul className="space-y-2 mb-4">
                   {skill.proof.map((line, k) => (

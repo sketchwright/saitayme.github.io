@@ -72,6 +72,9 @@ const App = () => {
         </Suspense>
       </div>
 
+      {/* Static film grain (Ember mono) */}
+      <div className="film-grain" aria-hidden />
+
       {/* Game Modal */}
       <CyberGame isVisible={showGame} onClose={() => setShowGame(false)} />
     </div>

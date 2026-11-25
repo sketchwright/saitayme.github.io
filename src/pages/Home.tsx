@@ -415,7 +415,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
             >
               <Link to="/projects">
                 <motion.button
-                  className="cyber-button primary-button relative overflow-hidden"
+                  className="cyber-button primary-button cta-glow relative overflow-hidden"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >

@@ -104,7 +104,7 @@ export default function ProjectCarousel() {
       whileInView={{ opacity: 1 }}
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.6 }}
-      className="py-20 md:py-28 relative"
+      className="pt-14 md:pt-16 pb-10 md:pb-12 relative"
     >
       <div className="cyber-container relative z-10 mb-10">
         <motion.h2

@@ -6,21 +6,42 @@ import ScrambleText from '@/components/ScrambleText';
 
 function thumbOf(item: MediaItem): string | undefined {
   if (item.thumbnail) return item.thumbnail;
-  if (item.youtubeId) return `https://i.ytimg.com/vi/${item.youtubeId}/hqdefault.jpg`;
+  // mqdefault is a true 320x180 16:9 frame: crisp at playlist size, no letterbox bars
+  if (item.youtubeId) return `https://i.ytimg.com/vi/${item.youtubeId}/mqdefault.jpg`;
   return undefined;
+}
+
+/** Big poster: tries maxres → sd → hq. YouTube may answer 200 with a 120x90 placeholder, so check naturalWidth. */
+const HERO_VARIANTS = ['maxresdefault', 'sddefault', 'hqdefault'];
+function HeroPoster({ item }: { item: MediaItem }) {
+  const [idx, setIdx] = useState(0);
+  if (item.thumbnail) return <img src={item.thumbnail} alt="" decoding="async" className="absolute inset-0 w-full h-full object-cover" />;
+  if (!item.youtubeId) return null;
+  const src = `https://i.ytimg.com/vi/${item.youtubeId}/${HERO_VARIANTS[idx]}.jpg`;
+  const next = () => setIdx((i) => Math.min(i + 1, HERO_VARIANTS.length - 1));
+  return (
+    <img
+      key={src}
+      src={src}
+      alt=""
+      decoding="async"
+      onLoad={(e) => { if (e.currentTarget.naturalWidth < 400 && idx < HERO_VARIANTS.length - 1) next(); }}
+      onError={next}
+      className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.03]"
+    />
+  );
 }
 
 /** Spotlight player: shows a poster until clicked, then loads the YouTube iframe (keeps the page fast). */
 function Spotlight({ item }: { item: MediaItem }) {
   const [playing, setPlaying] = useState(false);
-  const thumb = thumbOf(item);
   const isExternal = !item.youtubeId && item.url;
 
   return (
-    <div className="relative rounded-xl overflow-hidden border-2 border-primary/40 bg-cyber-black shadow-[0_0_40px_rgba(240,126,65,0.12)]">
-      {/* HUD corners */}
-      {['top-2 left-2 border-l-2 border-t-2', 'top-2 right-2 border-r-2 border-t-2', 'bottom-2 left-2 border-l-2 border-b-2', 'bottom-2 right-2 border-r-2 border-b-2'].map((c) => (
-        <span key={c} className={`absolute ${c} w-4 h-4 border-primary/80 z-20 pointer-events-none`} />
+    <div className="relative overflow-hidden border border-primary/25 bg-cyber-black">
+      {/* corner brackets */}
+      {['-top-px -left-px border-l border-t', '-top-px -right-px border-r border-t', '-bottom-px -left-px border-l border-b', '-bottom-px -right-px border-r border-b'].map((c) => (
+        <span key={c} className={`absolute ${c} w-4 h-4 border-primary z-20 pointer-events-none`} />
       ))}
       <div className="relative aspect-video">
         {playing && item.youtubeId ? (
@@ -38,18 +59,17 @@ function Spotlight({ item }: { item: MediaItem }) {
             onClick={() => (isExternal ? window.open(item.url, '_blank', 'noopener') : setPlaying(true))}
             aria-label={`Play ${item.title}`}
           >
-            {thumb && <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />}
+            <HeroPoster item={item} />
             <div className="absolute inset-0 bg-gradient-to-t from-cyber-black via-cyber-black/20 to-transparent" />
             <div className="media-scanlines absolute inset-0 pointer-events-none" />
-            <span className="absolute inset-0 flex items-center justify-center">
-              <span className="relative flex items-center justify-center w-20 h-20 rounded-full border-2 border-primary bg-cyber-black/70 backdrop-blur-sm shadow-[0_0_30px_rgba(240,126,65,0.5)] transition-transform duration-300 group-hover:scale-110">
-                <span className="absolute inset-0 rounded-full border-2 border-primary animate-ping opacity-30" />
-                <span className="ml-1 w-0 h-0 border-y-[12px] border-y-transparent border-l-[20px] border-l-primary" />
+            <span className="absolute right-4 bottom-4 flex items-center justify-center">
+              <span className="relative flex items-center justify-center w-16 h-16 border border-primary bg-cyber-black/80 transition-colors duration-300 group-hover:bg-primary">
+                <span className="ml-1 w-0 h-0 border-y-[10px] border-y-transparent border-l-[16px] border-l-primary group-hover:border-l-cyber-black transition-colors" />
               </span>
             </span>
             <span className="absolute left-4 bottom-4 right-4 text-left">
               {item.meta && <span className="block text-[11px] font-mono uppercase tracking-[0.2em] text-primary/90 mb-1">{item.meta}</span>}
-              <span className="block font-cyber text-lg md:text-2xl text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.9)]">{item.title}</span>
+              <span className="block font-cyber text-lg md:text-2xl text-white ">{item.title}</span>
             </span>
           </button>
         )}
@@ -92,7 +112,7 @@ export default function MediaHub() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-60px' }}
       transition={{ duration: 0.6 }}
-      className="py-20 md:py-24 relative"
+      className="pt-6 md:pt-8 pb-20 md:pb-24 relative"
     >
       <div className="cyber-container relative z-10">
         <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">

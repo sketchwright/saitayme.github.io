@@ -38,10 +38,10 @@ export const MEDIA_CHANNELS: MediaChannel[] = [
       { label: 'Ingame Studios on YouTube', url: 'https://www.youtube.com/@IngameStudiosGames', kind: 'youtube' },
     ],
     items: [
-      { title: 'Mayhem À La Carte Dev Stream', meta: 'Nov 2026 · Ingame Studios', youtubeId: '0BKtmrlAXZs' },
-      { title: 'Mayhem À La Carte Dev Stream', meta: 'Nov 2026 · Ingame Studios', youtubeId: 'f6YXXkD4atM' },
-      { title: 'Mayhem À La Carte Dev Stream', meta: 'Oct 2026 · Ingame Studios', youtubeId: 'jhweuFVXR6Q' },
-      { title: 'Mayhem À La Carte Dev Stream', meta: 'Oct 2026 · Ingame Studios', youtubeId: 'NEcMjLHvhWA' },
+      { title: 'Dev Stream · 12 Nov', meta: 'Mayhem À La Carte · live co-op', youtubeId: '0BKtmrlAXZs' },
+      { title: 'Dev Stream · 10 Nov', meta: 'Mayhem À La Carte · live co-op', youtubeId: 'f6YXXkD4atM' },
+      { title: 'Dev Stream · 16 Oct', meta: 'Mayhem À La Carte · live co-op', youtubeId: 'jhweuFVXR6Q' },
+      { title: 'Dev Stream · 13 Oct', meta: 'Mayhem À La Carte · live co-op', youtubeId: 'NEcMjLHvhWA' },
     ],
   },
   {
