@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { MEDIA_CHANNELS, MediaItem } from '@/data/media';
+import { MEDIA_CHANNELS, MediaItem, ChannelLink } from '@/data/media';
+import { FaTwitch, FaYoutube, FaInstagram, FaGlobe } from 'react-icons/fa';
 import ScrambleText from '@/components/ScrambleText';
 
 function thumbOf(item: MediaItem): string | undefined {
@@ -57,15 +58,33 @@ function Spotlight({ item }: { item: MediaItem }) {
   );
 }
 
+const LINK_ICON = { twitch: FaTwitch, youtube: FaYoutube, instagram: FaInstagram, web: FaGlobe } as const;
+
+function LinkChip({ link, big = false }: { link: ChannelLink; big?: boolean }) {
+  const Icon = LINK_ICON[link.kind];
+  return (
+    <a
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={`group inline-flex items-center gap-3 rounded-lg border border-primary/30 bg-cyber-black/70 hover:border-primary hover:bg-primary/10 hover:shadow-[0_0_20px_rgba(240,126,65,0.2)] transition-all ${big ? 'px-5 py-4' : 'px-3 py-1.5'}`}
+    >
+      <Icon className={`text-primary ${big ? 'text-2xl' : 'text-sm'}`} />
+      <span className={`font-mono text-gray-200 group-hover:text-white ${big ? 'text-sm' : 'text-xs'}`}>{link.label}</span>
+      <span className="text-primary/60 group-hover:text-primary text-xs">↗</span>
+    </a>
+  );
+}
+
 export default function MediaHub() {
-  const channels = useMemo(() => MEDIA_CHANNELS.filter((c) => c.items.length > 0), []);
+  const channels = useMemo(() => MEDIA_CHANNELS.filter((c) => c.items.length > 0 || (c.links?.length ?? 0) > 0), []);
   const [channelId, setChannelId] = useState(channels[0]?.id);
   const channel = channels.find((c) => c.id === channelId) ?? channels[0];
   const [activeIdx, setActiveIdx] = useState(0);
   const total = channels.reduce((n, c) => n + c.items.length, 0);
 
   if (!channel) return null;
-  const active = channel.items[Math.min(activeIdx, channel.items.length - 1)];
+  const active = channel.items.length ? channel.items[Math.min(activeIdx, channel.items.length - 1)] : undefined;
 
   return (
     <motion.section
@@ -114,6 +133,17 @@ export default function MediaHub() {
           </div>
         )}
 
+        {channel.links && channel.links.length > 0 && active && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {channel.links.map((l) => <LinkChip key={l.url} link={l} />)}
+          </div>
+        )}
+
+        {!active ? (
+          <div className="rounded-xl border border-primary/25 bg-cyber-dark/40 p-6 md:p-10 flex flex-wrap gap-4">
+            {(channel.links ?? []).map((l) => <LinkChip key={l.url} link={l} big />)}
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-5">
           <AnimatePresence mode="wait">
             <motion.div
@@ -131,11 +161,7 @@ export default function MediaHub() {
           <div className="rounded-xl border border-primary/25 bg-cyber-dark/40 p-2 lg:max-h-[420px] overflow-y-auto media-rail">
             <div className="flex items-center justify-between px-2 py-1.5 mb-1">
               <span className="text-[11px] font-mono text-primary/80 uppercase tracking-wider">Playlist · {channel.items.length}</span>
-              {channel.channelUrl && (
-                <a href={channel.channelUrl} target="_blank" rel="noopener noreferrer" className="text-[11px] font-mono text-primary/70 hover:text-primary">
-                  docs ↗
-                </a>
-              )}
+
             </div>
             <ul className="space-y-1.5">
               {channel.items.map((item, i) => {
@@ -163,6 +189,7 @@ export default function MediaHub() {
             </ul>
           </div>
         </div>
+        )}
       </div>
     </motion.section>
   );

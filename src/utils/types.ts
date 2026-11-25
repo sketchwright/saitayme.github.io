@@ -29,6 +29,9 @@ export type Project = {
   githubUrl?: string;
   gallery?: string[];
   thumbnailPosition?: string;
+  tier?: 'flagship' | 'also' | 'archive';
+  headline?: string;
+  badge?: string;
 };
 
 export type SectionProps = {

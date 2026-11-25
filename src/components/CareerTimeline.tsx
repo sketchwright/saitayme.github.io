@@ -18,7 +18,7 @@ const STOPS: Stop[] = [
   { when: 'Oct 2026 →', title: 'Marketing Engineer', org: 'Ingame Studios · Mayhem À La Carte', track: 'grow', now: true, lines: ['Social, reveal, creators, streams, website', 'Built IGS Outreach and an agentic content pipeline', 'Still shipping code: recipe pipeline, co-op framework'] },
 ];
 
-const TRACK_COLOR = { build: '#f07e41', grow: '#fcee0a', edu: '#9ca3af' } as const;
+const TRACK_COLOR = { build: '#f07e41', grow: '#e8e8e8', edu: '#6b7280' } as const;
 const TRACK_LABEL = { build: 'BUILD', grow: 'GROW', edu: 'LEARN' } as const;
 
 export default function CareerTimeline() {
@@ -32,7 +32,7 @@ export default function CareerTimeline() {
       <div className="absolute left-4 md:left-1/2 top-0 bottom-0 w-px bg-primary/15 md:-translate-x-1/2" />
       <motion.div
         className="absolute left-4 md:left-1/2 top-0 w-[2px] md:-translate-x-1/2 origin-top"
-        style={{ scaleY: fill, height: '100%', background: 'linear-gradient(to bottom, #9ca3af, #f07e41 45%, #fcee0a)', boxShadow: '0 0 12px rgba(240,126,65,0.6)' }}
+        style={{ scaleY: fill, height: '100%', background: 'linear-gradient(to bottom, #6b7280, #f07e41 55%, #ffffff)', boxShadow: '0 0 12px rgba(240,126,65,0.6)' }}
       />
       <ol className="space-y-8 md:space-y-10">
         {STOPS.map((s, i) => {

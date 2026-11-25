@@ -5,8 +5,8 @@ const IMPACT_ITEMS = [
   { type: 'SHIPPED', value: 'Crime Boss: Rockay City' },
   { type: 'MARKETING', value: 'Mayhem À La Carte' },
   { type: 'SHIPPED', value: 'NOK (Steam)' },
-  { type: 'ENGINE', value: 'Unreal Engine' },
-  { type: 'SPECIALTY', value: 'Gameplay / Multiplayer' },
+  { type: 'BUILT', value: 'IGS Outreach' },
+  { type: 'ROLE', value: 'Marketing Engineer' },
 ];
 
 const EMPHASIS_INTERVAL_MS = 5000;

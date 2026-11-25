@@ -9,8 +9,8 @@ const DRIFT_PIXELS_PER_SEC = 12;
 const CAROUSEL_PAUSE_ON_HOVER = true;
 
 function CarouselCard({ project, index }: { project: Project; index: number }) {
-  const firstImpact = project.impact?.[0] ?? project.shortDescription ?? project.description.slice(0, 60);
-  const secondImpact = project.impact?.[1];
+  const firstImpact = project.headline ?? project.impact?.[0] ?? project.shortDescription ?? project.description.slice(0, 60);
+  const secondImpact = project.badge;
 
   return (
     <Link to="/projects" className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary">

@@ -36,9 +36,7 @@ const ProjectCard = ({
   onHoverChange,
 }: ProjectCardProps) => {
   const EngineIcon = project.category === 'Unity' ? DiUnitySmall : project.category === 'Marketing' ? MdCampaign : SiUnrealengine;
-  const summary = project.shortDescription ?? project.description;
-  const impactPreview = project.impact?.slice(0, 2) ?? [];
-  const impactDelayed = project.impact?.[2];
+  const summary = project.headline ?? project.shortDescription ?? project.description;
   const isLogoThumb = /ingame-studios|nerd-monkeys|mayhem\/logo/.test(project.thumbnail);
   const [showDelayedReward, setShowDelayedReward] = useState(false);
   const [sweepPlayed, setSweepPlayed] = useState(false);
@@ -186,42 +184,25 @@ const ProjectCard = ({
             {project.timeframe && ` · ${project.timeframe}`}
           </p>
         )}
-        <p className="text-gray-400 text-sm mb-3 line-clamp-2 transition-colors duration-300 group-hover:text-gray-300">
+        <p className="text-gray-200 text-[15px] leading-snug mb-4 min-h-[2.6rem] transition-colors duration-300 group-hover:text-white">
           {summary}
         </p>
 
-        {impactPreview.length > 0 && (
-          <ul
-            className={`text-xs mb-3 space-y-0.5 ${impactDelayed ? 'min-h-[3.5rem]' : ''}`}
-            aria-hidden
-          >
-            {impactPreview.map((line, i) => (
-              <li
-                key={i}
-                className={`line-clamp-1 transition-all duration-300
-                  ${i === 0 && showDelayedReward ? 'text-primary/90 font-medium' : 'text-gray-500'}
-                `}
-              >
-                • {line}
-              </li>
-            ))}
-            {/* Delayed reward: third line lives in reserved space so no layout shift */}
-            {impactDelayed && (
-              <motion.li
-                initial={false}
-                animate={{ opacity: showDelayedReward ? 1 : 0 }}
-                transition={{ duration: 0.22, ease: 'easeOut' }}
-                className="text-primary/80 line-clamp-1"
-              >
-                • {impactDelayed}
-              </motion.li>
-            )}
-          </ul>
+        {project.badge && (
+          <div className="mb-4">
+            <span
+              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded border font-mono text-[11px] uppercase tracking-wider transition-all duration-300
+                ${showDelayedReward || isSpotlight ? 'border-primary bg-primary/15 text-primary shadow-[0_0_14px_rgba(240,126,65,0.3)]' : 'border-primary/40 bg-primary/5 text-primary/90'}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              {project.badge}
+            </span>
+          </div>
         )}
 
-        {/* Tags: more legible on hover */}
+        {/* Tags: max 3, more legible on hover */}
         <div className="flex flex-wrap gap-2">
-          {project.tags.map((tag, index) => (
+          {project.tags.slice(0, 3).map((tag, index) => (
             <span
               key={index}
               className={`text-xs px-2 py-1 rounded-full transition-all duration-300

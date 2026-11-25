@@ -61,7 +61,7 @@ const C = SIZE / 2;
 const ORBIT = 186;
 const NODE_R = 30;
 const ORANGE = '#f07e41';
-const YELLOW = '#fcee0a';
+const YELLOW = '#e8e8e8'; // marketing side: light gray-white (brand: orange/black/white/gray)
 const colorOf = (s: Side) => (s === 'build' ? ORANGE : YELLOW);
 
 function nodePos(i: number) {

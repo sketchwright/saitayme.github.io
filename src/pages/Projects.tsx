@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { DiUnitySmall } from 'react-icons/di';
 import { SiUnrealengine } from 'react-icons/si';
 import { MdCampaign } from 'react-icons/md';
@@ -24,6 +24,7 @@ const Projects = () => {
   const [hoveredCardId, setHoveredCardId] = useState<string | null>(null);
   const [featuredIdleIndex, setFeaturedIdleIndex] = useState(0);
   const [scrollCTAVisible, setScrollCTAVisible] = useState(true);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   useKonamiCode(() => {
     setShowSecretProjects(true);
@@ -161,11 +162,11 @@ const Projects = () => {
           </motion.div>
         )}
 
-        {/* Featured (priority 1–5) */}
+        {/* Flagship projects */}
         {featuredFiltered.length > 0 && (
           <section className="mb-16">
             <h2 className="text-2xl font-cyber text-primary mb-6 border-b border-primary/30 pb-2">
-              Featured Projects
+              Flagship Projects
             </h2>
             <div
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -187,51 +188,82 @@ const Projects = () => {
           </section>
         )}
 
-        {/* Professional tools (priority 6–9) */}
+        {/* Also built: compact one-line tiles */}
         {professionalFiltered.length > 0 && (
-          <section className="mb-16">
-            <h2 className="text-2xl font-cyber text-primary mb-6 border-b border-primary/30 pb-2">
-              More Professional Work
-            </h2>
-            <div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-              onMouseLeave={() => setHoveredCardId(null)}
-            >
-              {professionalFiltered.map((project) => (
-                <ProjectCard
+          <section className="mb-14">
+            <div className="flex items-end justify-between mb-5 border-b border-primary/30 pb-2">
+              <h2 className="text-2xl font-cyber text-primary">Also built</h2>
+              <span className="text-[11px] font-mono text-gray-500 uppercase tracking-wider">click for details</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {professionalFiltered.map((project, i) => (
+                <motion.button
                   key={project.id}
-                  project={project}
+                  type="button"
                   onClick={() => setSelectedProject(project)}
-                  isSpotlight={hoveredCardId === project.id}
-                  isDimmed={hoveredCardId !== null && hoveredCardId !== project.id}
-                  onHoverChange={(hovered) => setHoveredCardId(hovered ? project.id : null)}
-                />
+                  initial={{ opacity: 0, y: 10 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.3, delay: i * 0.04 }}
+                  whileHover={{ x: 4 }}
+                  className="group flex items-center gap-3 text-left rounded-lg border border-primary/25 bg-cyber-black/80 p-2.5 pr-3 hover:border-primary/70 hover:shadow-[0_0_18px_rgba(240,126,65,0.15)] transition-colors"
+                >
+                  <span className="relative w-20 shrink-0 aspect-video rounded overflow-hidden border border-primary/20 bg-cyber-dark">
+                    <img src={project.thumbnail} alt="" loading="lazy" className="w-full h-full object-cover" style={{ objectPosition: project.thumbnailPosition }} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <span className="font-cyber text-sm text-primary truncate">{project.title}</span>
+                      {project.badge && <span className="hidden xl:inline text-[9px] font-mono uppercase text-gray-500 border border-gray-700 rounded px-1 shrink-0">{project.badge}</span>}
+                    </span>
+                    <span className="block text-xs text-gray-400 leading-snug line-clamp-2 group-hover:text-gray-200">{project.headline ?? project.shortDescription}</span>
+                  </span>
+                  <span className="text-primary/40 group-hover:text-primary font-mono text-sm shrink-0">›</span>
+                </motion.button>
               ))}
             </div>
           </section>
         )}
 
-        {/* Additional (priority 10+, jams / personal) */}
+        {/* Archive: collapsed */}
         {additionalFiltered.length > 0 && (
           <section className="mb-16">
-            <h2 className="text-2xl font-cyber text-primary mb-6 border-b border-primary/30 pb-2">
-              Personal &amp; Game Jams
-            </h2>
-            <div
-              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-              onMouseLeave={() => setHoveredCardId(null)}
+            <button
+              type="button"
+              onClick={() => setArchiveOpen((v) => !v)}
+              aria-expanded={archiveOpen}
+              className="w-full flex items-center justify-between rounded-lg border border-primary/20 bg-cyber-black/60 px-4 py-3 hover:border-primary/50 transition-colors"
             >
-              {additionalFiltered.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onClick={() => setSelectedProject(project)}
-                  isSpotlight={hoveredCardId === project.id}
-                  isDimmed={hoveredCardId !== null && hoveredCardId !== project.id}
-                  onHoverChange={(hovered) => setHoveredCardId(hovered ? project.id : null)}
-                />
-              ))}
-            </div>
+              <span className="font-cyber text-sm text-gray-300 uppercase tracking-wider">
+                Archive: early tools &amp; game jams <span className="text-gray-500 font-mono normal-case">({additionalFiltered.length})</span>
+              </span>
+              <motion.span animate={{ rotate: archiveOpen ? 90 : 0 }} className="text-primary font-mono">›</motion.span>
+            </button>
+            <AnimatePresence initial={false}>
+              {archiveOpen && (
+                <motion.ul
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="overflow-hidden mt-2 divide-y divide-primary/10 rounded-lg border border-primary/15"
+                >
+                  {additionalFiltered.map((project) => (
+                    <li key={project.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProject(project)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-primary/5 transition-colors"
+                      >
+                        <span className="font-mono text-sm text-primary/90 w-56 shrink-0 truncate">{project.title}</span>
+                        <span className="text-xs text-gray-500 truncate flex-1">{project.headline ?? project.shortDescription}</span>
+                        <span className="text-[10px] font-mono text-gray-600 uppercase shrink-0 hidden sm:inline">{project.projectType}</span>
+                      </button>
+                    </li>
+                  ))}
+                </motion.ul>
+              )}
+            </AnimatePresence>
           </section>
         )}
 

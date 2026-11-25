@@ -1,61 +1,58 @@
 /**
- * Media Hub content. Add videos here — the Home page Media Hub renders every
- * channel that has at least one item (empty channels are hidden).
+ * Media Hub content. Each channel shows its videos (spotlight + playlist) and/or
+ * its outbound channel links. Channels with neither are hidden.
  *
  * youtubeId: the part after "watch?v=" or "youtu.be/".
- * For Twitch VODs / clips or social posts, use `url` + `thumbnail` instead.
+ * For non-YouTube media (Twitch VOD, TikTok, Instagram…), use `url` + `thumbnail`.
  */
 export type MediaItem = {
   title: string;
-  /** Short context line, e.g. "Twitch · Mayhem dev stream" */
+  /** Short context line, e.g. "Mayhem À La Carte · Dev stream" */
   meta?: string;
   youtubeId?: string;
-  /** External link for non-YouTube media (Twitch VOD, TikTok, X, Instagram…) */
   url?: string;
-  /** Required when using `url` (no YouTube thumbnail available) */
   thumbnail?: string;
+};
+
+export type ChannelLink = {
+  label: string;
+  url: string;
+  kind: 'twitch' | 'youtube' | 'instagram' | 'web';
 };
 
 export type MediaChannel = {
   id: string;
   label: string;
   tagline: string;
-  /** Optional "visit channel" link */
-  channelUrl?: string;
+  links?: ChannelLink[];
   items: MediaItem[];
 };
 
 export const MEDIA_CHANNELS: MediaChannel[] = [
   {
     id: 'live',
-    label: 'Live & Streams',
-    tagline: 'Hosting dev streams on Twitch and YouTube for Crime Boss and Mayhem À La Carte.',
-    items: [
-      // { title: 'Mayhem À La Carte dev stream #1', meta: 'Twitch · co-host', youtubeId: '...' },
+    label: 'Dev Streams',
+    tagline: 'Live dev streams for Mayhem À La Carte on Twitch and YouTube.',
+    links: [
+      { label: 'Ingame Studios on Twitch', url: 'https://www.twitch.tv/ingame_studios', kind: 'twitch' },
+      { label: 'Ingame Studios on YouTube', url: 'https://www.youtube.com/@IngameStudiosGames', kind: 'youtube' },
     ],
-  },
-  {
-    id: 'studio',
-    label: 'Ingame Studios YouTube',
-    tagline: 'Studio videos I appear in or produced.',
     items: [
-      // { title: '...', meta: 'Ingame Studios', youtubeId: '...' },
-    ],
-  },
-  {
-    id: 'social',
-    label: 'Socials',
-    tagline: 'Short-form content I made or star in.',
-    items: [
-      // { title: '...', meta: 'TikTok', url: 'https://…', thumbnail: '/media/…jpg' },
+      { title: 'Mayhem À La Carte Dev Stream', meta: 'Nov 2026 · Ingame Studios', youtubeId: '0BKtmrlAXZs' },
+      { title: 'Mayhem À La Carte Dev Stream', meta: 'Nov 2026 · Ingame Studios', youtubeId: 'f6YXXkD4atM' },
+      { title: 'Mayhem À La Carte Dev Stream', meta: 'Oct 2026 · Ingame Studios', youtubeId: 'jhweuFVXR6Q' },
+      { title: 'Mayhem À La Carte Dev Stream', meta: 'Oct 2026 · Ingame Studios', youtubeId: 'NEcMjLHvhWA' },
     ],
   },
   {
     id: 'modkit',
-    label: 'ModKit Origins',
-    tagline: 'Where it started: promos and my 11-part Crime Boss ModKit tutorial series.',
-    channelUrl: 'https://igstudios.atlassian.net/wiki/spaces/CBMK',
+    label: 'ModKit',
+    tagline: 'Where it started: ModKit streams, promos and my 11-part tutorial series.',
+    links: [{ label: 'Crime Boss ModKit website', url: 'https://cbmodkit.ingamestudios.com/', kind: 'web' }],
     items: [
+      { title: 'What’s in ModKit 1.0?', meta: 'ModKit stream', youtubeId: 'ACxK5sQ2BV4' },
+      { title: 'ModKit Stream with Vax', meta: 'ModKit stream', youtubeId: 'Tc1vXolh7aE' },
+      { title: 'Community Showcase #8', meta: 'ModKit stream', youtubeId: 'kcynC2FRxTE' },
       { title: 'Crime Boss ModKit — Promo 1', meta: 'Promo', youtubeId: 'VIOCtbHPRlI' },
       { title: 'Crime Boss ModKit — Promo 2', meta: 'Promo', youtubeId: 'GaMi5qA_dgM' },
       { title: 'Tutorial 01', meta: 'ModKit tutorial', youtubeId: 'wBp9MJ_q9Bo' },
@@ -70,5 +67,15 @@ export const MEDIA_CHANNELS: MediaChannel[] = [
       { title: 'Tutorial 12', meta: 'ModKit tutorial', youtubeId: 'xCiBI67ozpg' },
       { title: 'Tutorial 13', meta: 'ModKit tutorial', youtubeId: 'a4c6ZE0l3gw' },
     ],
+  },
+  {
+    id: 'social',
+    label: 'Socials',
+    tagline: 'Channels I run for Mayhem À La Carte.',
+    links: [
+      { label: 'Mayhem À La Carte on Instagram', url: 'https://www.instagram.com/mayhemalacarte', kind: 'instagram' },
+      { label: 'Mayhem À La Carte on YouTube', url: 'https://www.youtube.com/@Mayhem%C3%80LaCarte', kind: 'youtube' },
+    ],
+    items: [],
   },
 ];

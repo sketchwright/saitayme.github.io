@@ -215,7 +215,7 @@ SECURITY: MAXIMUM
 [PROFILE DATA]
 -------------
 NAME: JULIAN STRUNZ
-ROLE: GAMEPLAY PROGRAMMER // MARKETING ENGINEER
+ROLE: MARKETING ENGINEER // GAMEPLAY PROGRAMMER
 STATUS: ACTIVE
 
 > NEURAL INTERFACE STABILIZED
@@ -438,7 +438,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
                 <div className="h-4 md:h-12" />
                 <div className="flex flex-col items-center justify-center space-y-4">
                   <div className="text-[#fcee0a] font-cyber tracking-[0.2em] text-2xl md:text-4xl min-h-[3rem] flex items-center">
-                    <TerminalText delay={contentDelays.terminal}>{`> GAMEPLAY PROGRAMMER // GAME MARKETING_`}</TerminalText>
+                    <TerminalText delay={contentDelays.terminal}>{`> MARKETING ENGINEER // GAMEPLAY PROGRAMMER_`}</TerminalText>
                   </div>
                 </div>
               </h1>
@@ -450,8 +450,8 @@ const Home = ({ onPlayGame }: HomeProps) => {
               transition={{ duration: 0.7, delay: contentDelays.paragraph, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="text-gray-400 max-w-2xl mx-auto px-4 text-lg font-mono"
             >
-              Unreal multiplayer and gameplay on Crime Boss: Rockay City.
-              Now running marketing for Mayhem À La Carte at Ingame Studios.
+              Marketing Engineer at Ingame Studios: I run marketing for Mayhem À La Carte
+              and build the tools behind it. Before that, Unreal gameplay &amp; multiplayer on Crime Boss.
               I build games, then I get people to play them.
             </motion.p>
 
