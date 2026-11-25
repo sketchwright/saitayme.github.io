@@ -5,7 +5,6 @@ import Navbar from '@components/Navbar'
 import { initGA, usePageTracking } from '@/utils/analytics'
 import { useEffect, useState } from 'react'
 // import BackgroundAnimation from '@components/BackgroundAnimation' // Temporarily disabled for performance
-import CyberGame from '@components/CyberGame'
 import LoadingScreen from '@components/LoadingScreen'
 
 // Lazy load pages
@@ -13,6 +12,8 @@ const Home = lazy(() => import('./pages/Home'))
 const About = lazy(() => import('./pages/About'))
 const Projects = lazy(() => import('./pages/Projects'))
 const Contact = lazy(() => import('./pages/Contact'))
+// Game is code-split: only downloaded when opened, and a broken/in-progress game can't take the site down
+const CyberGame = lazy(() => import('@components/CyberGame'))
 
 const App = () => {
   const [showGame, setShowGame] = useState(false)
@@ -81,7 +82,11 @@ const App = () => {
       <div className="film-grain" aria-hidden />
 
       {/* Game Modal */}
-      <CyberGame isVisible={showGame} onClose={() => setShowGame(false)} />
+      {showGame && (
+        <Suspense fallback={null}>
+          <CyberGame isVisible={showGame} onClose={() => setShowGame(false)} />
+        </Suspense>
+      )}
     </div>
   )
 }
