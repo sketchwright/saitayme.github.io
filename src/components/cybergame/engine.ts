@@ -2324,7 +2324,16 @@ export class Game implements BossHost {
     // scale with the player's build: average build at this point -> base hp
     // sqrt: a stronger build still kills faster, just not proportionally faster
     const REF = [1.6, 2.6, 3.4];
-    const powerK = clamp(this.stats.power / REF[def.variant], 0.4, 3) * 1.15;
+    // crowd tools count where they help against this boss: the Warden's minions
+    // spawn right beside it (chain / pierce / cascade feed on them), Echo a little,
+    // the Root not at all
+    const v = def.variant;
+    const st = this.stats;
+    const crowd = 1 + [0.12, 0.04, 0][v] * st.chain + [0.05, 0.02, 0][v] * st.pierce + [0.04, 0.02, 0][v] * st.cascade;
+    const rel = (st.power * crowd) / REF[v];
+    let powerK = clamp(rel, 0.4, 3) * 1.15;
+    // NORMAL only: low single-target builds (lifesteal, chain) get a lighter Root
+    if (v === 2 && !this.hard) powerK *= clamp(0.45 + 0.55 * (st.power / REF[v]), 0.65, 1);
     const u = this.adoptUnit(e, 'boss', Math.round(def.hp * powerK * (this.hard ? 1.3 : 1)), U_BOSS);
     if (!u) return;
     u.r = def.size * 0.3;
