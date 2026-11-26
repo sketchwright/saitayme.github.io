@@ -19,20 +19,15 @@ export interface WaveDef {
 
 const G = (kind: EnemyKind, n: number, from: SpawnFrom, at: number, gap = 0.6): GroupDef => ({ kind, n, from, at, gap });
 
-export type BossAttack = 'ring' | 'fan' | 'spiral' | 'sweep' | 'laser' | 'summon' | 'rain';
 
 export interface BossDef {
   name: string;
   title: string;
+  /** 0 WARDEN (shielded), 1 ECHO (teleports / clones / tethers), 2 ROOT (final) */
+  variant: 0 | 1 | 2;
   size: number;
   hp: number;
-  /** hp fractions where the next phase begins (descending) */
-  phases: number[];
-  /** attack rotation per phase */
-  attacks: BossAttack[][];
-  summon: EnemyKind[];
   bulletSpeed: number;
-  attackGap: number;
 }
 
 export interface SectorDef {
@@ -43,6 +38,10 @@ export interface SectorDef {
   /** background theme index used by the renderer */
   theme: 0 | 1 | 2;
   hpMul: number;
+  /** multiplier on all damage the player takes from this sector */
+  dmgMul: number;
+  /** multiplier on enemies per group (rounded) */
+  countMul: number;
   bulletSpeed: number;
   /** seconds between sentinel volleys (whole field) */
   fireGap: number;
@@ -57,12 +56,12 @@ export interface SectorDef {
 }
 
 export const KIND_STATS: Record<EnemyKind, { hp: number; size: number; r: number; score: number; contact: number }> = {
-  crawler: { hp: 5, size: 44, r: 13, score: 60, contact: 14 },
-  sentinel: { hp: 12, size: 50, r: 16, score: 140, contact: 16 },
-  leech: { hp: 9, size: 46, r: 13, score: 120, contact: 10 },
-  wraith: { hp: 9, size: 48, r: 15, score: 150, contact: 14 },
-  swarm: { hp: 10, size: 44, r: 15, score: 110, contact: 14 },
-  fragment: { hp: 1, size: 20, r: 7, score: 20, contact: 8 },
+  crawler: { hp: 5, size: 44, r: 13, score: 60, contact: 20 },
+  sentinel: { hp: 12, size: 50, r: 16, score: 140, contact: 22 },
+  leech: { hp: 9, size: 46, r: 13, score: 120, contact: 14 },
+  wraith: { hp: 9, size: 48, r: 15, score: 150, contact: 20 },
+  swarm: { hp: 10, size: 44, r: 15, score: 110, contact: 18 },
+  fragment: { hp: 1, size: 20, r: 7, score: 20, contact: 12 },
   boss: { hp: 400, size: 200, r: 60, score: 5000, contact: 30 },
 };
 
@@ -73,13 +72,15 @@ export const SECTORS: SectorDef[] = [
     subtitle: 'FIREWALL LAYER',
     intro: 'Crawlers probe the outer firewall. Sentinels hold the gates.',
     theme: 0,
-    hpMul: 1,
-    bulletSpeed: 210,
+    hpMul: 0.9,
+    dmgMul: 0.5,
+    countMul: 1.0,
+    bulletSpeed: 225,
     fireGap: 1.5,
     strikeGap: 99,
-    maxAlive: 16,
+    maxAlive: 15,
     waves: [
-      { groups: [G('sentinel', 2, 'corners', 0, 1.5), G('crawler', 4, 'top', 1, 0.8), G('crawler', 4, 'walls', 9, 0.8), G('crawler', 5, 'top', 17, 0.6), G('sentinel', 1, 'edges', 22), G('crawler', 4, 'walls', 27, 0.6)] },
+      { groups: [G('sentinel', 3, 'edges', 0, 1.2), G('crawler', 4, 'top', 1, 0.8), G('crawler', 4, 'walls', 9, 0.8), G('crawler', 5, 'top', 17, 0.6), G('sentinel', 1, 'edges', 22), G('crawler', 4, 'walls', 27, 0.6)] },
       { groups: [G('sentinel', 3, 'edges', 0, 1.2), G('crawler', 5, 'top', 2, 0.6), G('crawler', 6, 'walls', 11, 0.5), G('crawler', 5, 'corners', 19, 0.5), G('sentinel', 2, 'corners', 24), G('crawler', 6, 'top', 30, 0.45)] },
       { groups: [G('crawler', 6, 'walls', 0, 0.45), G('sentinel', 3, 'top', 3, 1), G('crawler', 7, 'top', 10, 0.4), G('sentinel', 2, 'edges', 18), G('crawler', 6, 'walls', 22, 0.4), G('crawler', 6, 'corners', 30, 0.35)] },
       { groups: [G('sentinel', 4, 'edges', 0, 0.8), G('crawler', 8, 'top', 2, 0.4), G('crawler', 8, 'walls', 12, 0.35), G('crawler', 6, 'corners', 22, 0.3), G('sentinel', 2, 'top', 26), G('crawler', 8, 'top', 32, 0.3)] },
@@ -89,16 +90,10 @@ export const SECTORS: SectorDef[] = [
     boss: {
       name: 'WARDEN.EXE',
       title: 'PERIMETER INTELLIGENCE',
+      variant: 0,
       size: 190,
-      hp: 340,
-      phases: [0.5],
-      attacks: [
-        ['fan', 'ring', 'fan', 'sweep'],
-        ['ring', 'laser', 'fan', 'spiral'],
-      ],
-      summon: ['crawler', 'crawler', 'sentinel'],
-      bulletSpeed: 190,
-      attackGap: 1.5,
+      hp: 200,
+      bulletSpeed: 215,
     },
     log: ['perimeter scan // 2048 ports', 'firewall rules reloaded', 'quarantine zone armed', 'packet inspection: hostile', 'trace route 10.0.0.1 > ???'],
   },
@@ -109,10 +104,12 @@ export const SECTORS: SectorDef[] = [
     intro: 'Wraiths phase through corrupted memories. Leeches feed on your integrity.',
     theme: 1,
     hpMul: 1.6,
-    bulletSpeed: 235,
-    fireGap: 1.3,
-    strikeGap: 2.6,
-    maxAlive: 16,
+    dmgMul: 1.35,
+    countMul: 1.35,
+    bulletSpeed: 255,
+    fireGap: 0.9,
+    strikeGap: 1.9,
+    maxAlive: 22,
     waves: [
       { groups: [G('wraith', 3, 'phase', 0, 1.2), G('leech', 2, 'sides', 4, 1.5), G('crawler', 4, 'walls', 10, 0.6), G('wraith', 3, 'phase', 17, 1), G('leech', 3, 'sides', 23, 1.2)] },
       { groups: [G('swarm', 3, 'cluster', 0), G('wraith', 4, 'phase', 5, 0.9), G('leech', 3, 'sides', 12, 1), G('swarm', 3, 'cluster', 20), G('wraith', 3, 'swoop', 27, 0.25)] },
@@ -122,19 +119,12 @@ export const SECTORS: SectorDef[] = [
     ],
     eliteExtra: [G('wraith', 3, 'phase', 3, 0.6), G('leech', 3, 'sides', 12, 0.8)],
     boss: {
-      name: 'MNEMOSYNE',
+      name: 'ECHO',
       title: 'MEMORY CORRUPTOR',
-      size: 220,
-      hp: 620,
-      phases: [0.6, 0.25],
-      attacks: [
-        ['spiral', 'fan', 'rain'],
-        ['ring', 'sweep', 'spiral', 'laser'],
-        ['spiral', 'rain', 'laser', 'ring'],
-      ],
-      summon: ['leech', 'wraith', 'swarm'],
-      bulletSpeed: 205,
-      attackGap: 1.25,
+      variant: 1,
+      size: 210,
+      hp: 680,
+      bulletSpeed: 235,
     },
     log: ['memory pages: 41% corrupt', 'restoring snapshot 0x7F..', 'ghost process detected', 'heap overflow // sector 9', 'recollection mismatch'],
   },
@@ -144,11 +134,13 @@ export const SECTORS: SectorDef[] = [
     subtitle: 'ROGUE INTELLIGENCE',
     intro: 'The rogue AI defends its kernel with everything it has.',
     theme: 2,
-    hpMul: 2.4,
-    bulletSpeed: 255,
-    fireGap: 1.0,
-    strikeGap: 2.0,
-    maxAlive: 18,
+    hpMul: 2.3,
+    dmgMul: 1.7,
+    countMul: 1.5,
+    bulletSpeed: 280,
+    fireGap: 0.65,
+    strikeGap: 1.3,
+    maxAlive: 26,
     waves: [
       { groups: [G('sentinel', 3, 'edges', 0, 0.8), G('crawler', 6, 'walls', 2, 0.4), G('wraith', 4, 'phase', 8, 0.8), G('crawler', 6, 'top', 15, 0.35), G('leech', 3, 'sides', 21, 0.8), G('wraith', 4, 'swoop', 28, 0.2)] },
       { groups: [G('swarm', 3, 'cluster', 0), G('sentinel', 3, 'corners', 2, 0.8), G('leech', 4, 'sides', 8, 0.7), G('crawler', 8, 'walls', 14, 0.3), G('swarm', 3, 'cluster', 22), G('wraith', 4, 'phase', 28, 0.5)] },
@@ -158,19 +150,12 @@ export const SECTORS: SectorDef[] = [
     ],
     eliteExtra: [G('sentinel', 2, 'corners', 3, 0.8), G('swarm', 3, 'cluster', 12), G('wraith', 3, 'swoop', 20, 0.2)],
     boss: {
-      name: 'ROGUE KERNEL',
+      name: 'ROOT',
       title: 'THE OVERMIND',
+      variant: 2,
       size: 250,
-      hp: 1000,
-      phases: [0.66, 0.33],
-      attacks: [
-        ['fan', 'ring', 'laser', 'spiral'],
-        ['spiral', 'sweep', 'rain', 'laser', 'ring'],
-        ['laser', 'spiral', 'rain', 'sweep', 'ring', 'fan'],
-      ],
-      summon: ['crawler', 'wraith', 'leech', 'swarm', 'sentinel'],
-      bulletSpeed: 225,
-      attackGap: 1.0,
+      hp: 1050,
+      bulletSpeed: 255,
     },
     log: ['kernel access: DENIED', 'rogue weights detected', 'self-replication 12%', 'it is watching', 'core temperature critical'],
   },

@@ -27,8 +27,8 @@ export const ROUTE_INFO: Record<NodeType, RouteInfo> = {
   },
   repair: {
     name: 'REPAIR NODE',
-    line: 'Restore 40% integrity and refill shields, then a standard wave.',
-    reward: '+40% integrity',
+    line: 'Restore 25% integrity and refill shields, then a standard wave.',
+    reward: 'Integrity repair, shields refilled',
     risk: 'None',
   },
   cache: {

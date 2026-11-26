@@ -3,6 +3,7 @@
 const BEST_KEY = 'cyberDefenderBestRun';
 const MUTE_KEY = 'cyberDefenderMuted';
 const AUTO_KEY = 'cyberDefenderAutoFire';
+const HARD_KEY = 'cyberDefenderHard';
 
 const get = (k: string): string | null => {
   try {
@@ -33,3 +34,6 @@ export const saveMuted = (muted: boolean): void => set(MUTE_KEY, muted ? '1' : '
 /** Auto-fire defaults to on. */
 export const loadAutoFire = (): boolean => get(AUTO_KEY) !== '0';
 export const saveAutoFire = (on: boolean): void => set(AUTO_KEY, on ? '1' : '0');
+
+export const loadHard = (): boolean => get(HARD_KEY) === '1';
+export const saveHard = (on: boolean): void => set(HARD_KEY, on ? '1' : '0');

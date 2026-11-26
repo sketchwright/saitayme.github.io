@@ -5,11 +5,9 @@
 // smooth intent velocities, never by setting positions); this file owns
 // spawning, type behaviours, combat, upgrades, routes and the run structure.
 import {
-  Boss,
   Enemy,
   EnemyKind,
   Vec,
-  bossCharge,
   crawlerLunge,
   createEnemy,
   hurtEnemy,
@@ -18,7 +16,6 @@ import {
   leechToggleLatch,
   sentinelCharge,
   sentinelMuzzle,
-  setBossPhase,
   spawnEnemy,
   turnToward,
   updateEnemy,
@@ -31,6 +28,8 @@ import {
   C_ORANGE,
   C_RED,
   C_WHITE,
+  EB_HARD,
+  EB_HOMING,
   EB_NEEDLE,
   EB_ORB,
   EB_PELLET,
@@ -68,6 +67,7 @@ import {
   TELL_TIME,
   U_ACT,
   U_BOSS,
+  U_DECOY,
   U_DYING,
   U_ENTER,
   U_FREE,
@@ -91,7 +91,8 @@ import {
   computeStats,
   computeSynergies,
 } from './content/upgrades';
-import { BossAttack, BossDef, FLAVOR, GroupDef, KIND_STATS, SECTORS, SectorDef } from './content/sectors';
+import { FLAVOR, GroupDef, KIND_STATS, SECTORS, SectorDef } from './content/sectors';
+import { BossCtl, BossHost } from './bosses';
 import { generateRoutes } from './content/routes';
 import { ANOMALIES, AnomalyCtx, AnomalyDef } from './content/anomalies';
 
@@ -142,37 +143,10 @@ export interface RunState {
   lastSynergy: string;
 }
 
-interface BossState {
-  def: BossDef;
-  phase: number;
-  attack: BossAttack | null;
-  atkT: number;
-  atkStep: number;
-  atkIdx: number;
-  gap: number;
-  inv: number;
-  entering: number;
-  sweep: boolean;
-  laser: number; // 0 off, 1 telegraph, 2 firing
-  laserX: number;
-  reachNext: number;
-  dying: number;
-  spin: number;
-  /** tell before an attack: core brightens, aim line for aimed attacks */
-  windup: number;
-  /** seconds left of the exposed-core window (bonus damage) */
-  vuln: number;
-  openingBurst: boolean;
-}
-
-/** Exposed-core window after each boss attack and its damage multiplier. */
-export const VULN_TIME = 3;
-export const VULN_MULT = 1.5;
-
 const tmpV: Vec = { x: 0, y: 0 };
 const intentV: Vec = { x: 0, y: 0 };
 
-export class Game {
+export class Game implements BossHost {
   phase: Phase = 'menu';
   // view
   W = 800;
@@ -226,6 +200,7 @@ export class Game {
   dying = -1;
   hitThisWave = false;
   lowWarned = false;
+  private alarmT = 0;
   readonly trailX = new Float32Array(16);
   readonly trailY = new Float32Array(16);
   trailHead = 0;
@@ -243,7 +218,10 @@ export class Game {
   clearT = -1;
   isBoss = false;
   boss: Unit | null = null;
-  bs: BossState | null = null;
+  bc: BossCtl | null = null;
+  /** upgrade temporarily disabled by the final boss */
+  hacked: string | null = null;
+  hackT = 0;
   sector: SectorDef = SECTORS[0];
   private fireDirT = 2;
   private strikeT = 4;
@@ -252,6 +230,17 @@ export class Game {
   private waveClock = 0;
   private clusterSeq = 0;
   private fightBonus = false;
+  /** HARD difficulty: tougher, denser, harder-hitting enemies */
+  hard = false;
+
+  private dmgScale(): number {
+    return this.sector.dmgMul * (this.hard ? 1.3 : 1);
+  }
+
+  /** repair node strength drops as the run goes deeper */
+  repairFrac(): number {
+    return 0.25;
+  }
   /** seconds since the last kill in this wave (stall safety valve) */
   private sinceKill = 0;
   stallPull = false;
@@ -432,7 +421,8 @@ export class Game {
         if (!repeat) this.triggerDash();
         break;
       case 'Backquote':
-        if (this.debug && !repeat) {
+        // dev-only slow motion; compiled out of production builds
+        if (import.meta.env.DEV && this.debug && !repeat) {
           this.timeScale = this.timeScale < 1 ? 1 : 0.2;
           this.pushLog(`debug: time x${this.timeScale}`);
         }
@@ -483,7 +473,7 @@ export class Game {
     this.ev.phase(p);
   }
 
-  private sfx(n: SfxName): void {
+  sfx(n: SfxName): void {
     if (this.phase === 'playing' || n === 'select' || n === 'click' || n === 'sector' || n === 'synergy' || n === 'pickup') this.ev.sound(n);
   }
 
@@ -560,7 +550,12 @@ export class Game {
     this.waveActive = false;
     this.isBoss = false;
     this.boss = null;
-    this.bs = null;
+    if (this.hacked) {
+      this.hacked = null;
+      this.hackT = 0;
+      this.recomputeStats();
+    }
+    this.bc = null;
     this.clearT = -1;
     this.combo = 0;
     this.comboT = 0;
@@ -617,7 +612,7 @@ export class Game {
         break;
       case 'repair': {
         const before = this.hp;
-        this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * 0.4);
+        this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * this.repairFrac());
         this.shield = this.stats.shieldMax;
         this.pushLog(`integrity patched +${Math.round(this.hp - before)}`);
         this.sfx('pickup');
@@ -706,8 +701,10 @@ export class Game {
 
   private recomputeStats(): void {
     const prevMax = this.stats.maxHp;
-    this.syn = computeSynergies(this.owned);
-    this.stats = computeStats(this.owned, this.syn);
+    const active = new Map(this.owned);
+    if (this.hacked) active.delete(this.hacked);
+    this.syn = computeSynergies(active);
+    this.stats = computeStats(active, this.syn);
     this.stats.maxHp = Math.max(30, this.stats.maxHp + this.bonusMaxHp);
     if (this.stats.maxHp > prevMax) this.hp += this.stats.maxHp - prevMax;
     this.hp = Math.min(this.hp, this.stats.maxHp);
@@ -718,9 +715,18 @@ export class Game {
     const r = this.run;
     if (!r) return;
     const rng = r.offerRng;
-    const avail = UPGRADES.filter((u) => (this.owned.get(u.id) ?? 0) < u.maxStacks && (!only || only.includes(u.rarity)));
+    const cleared = r.wavesCleared;
+    const avail = UPGRADES.filter(
+      (u) => (this.owned.get(u.id) ?? 0) < u.maxStacks && (!only || only.includes(u.rarity)) && (only !== undefined || (u.unlock ?? 0) <= cleared),
+    );
+    // sector 1 is mostly common; rare / corrupted show up more deeper in
+    const bySector: Record<Rarity, number>[] = [
+      { common: 78, rare: 20, corrupted: 2 },
+      { common: 52, rare: 36, corrupted: 12 },
+      { common: 38, rare: 42, corrupted: 20 },
+    ];
     const weights: Record<Rarity, number> =
-      source === 'boss' ? { common: 12, rare: 60, corrupted: 28 } : source === 'elite' ? { common: 40, rare: 45, corrupted: 15 } : RARITY_WEIGHT;
+      source === 'boss' ? { common: 12, rare: 60, corrupted: 28 } : source === 'elite' ? { common: 40, rare: 48, corrupted: 12 } : bySector[r.sector] ?? RARITY_WEIGHT;
     const out: UpgradeDef[] = [];
     const pool = avail.slice();
     if (source === 'elite' || source === 'boss') {
@@ -876,7 +882,7 @@ export class Game {
     t.big = big;
   }
 
-  private sparks(x: number, y: number, dir: number, spread: number, n: number, smin: number, smax: number, color: number): void {
+  sparks(x: number, y: number, dir: number, spread: number, n: number, smin: number, smax: number, color: number): void {
     for (let i = 0; i < n; i++) {
       const a = dir + (Math.random() - 0.5) * spread;
       const s = rand(smin, smax);
@@ -884,7 +890,7 @@ export class Game {
     }
   }
 
-  private shatter(x: number, y: number, r: number, n: number, vx: number, vy: number, hot: boolean): void {
+  shatter(x: number, y: number, r: number, n: number, vx: number, vy: number, hot: boolean): void {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU;
       const d = Math.random() * r;
@@ -895,12 +901,12 @@ export class Game {
     }
   }
 
-  private addShake(v: number): void {
+  addShake(v: number): void {
     const cap = this.reducedMotion ? 3 : 22;
     this.shake = Math.min(cap, this.shake + (this.reducedMotion ? v * 0.2 : v));
   }
 
-  private say(t: string, sub: string, danger: boolean, dur: number): void {
+  say(t: string, sub: string, danger: boolean, dur: number): void {
     this.announce = t;
     this.announceSub = sub;
     this.announceDanger = danger;
@@ -912,7 +918,7 @@ export class Game {
     if (this.log.length > 6) this.log.shift();
   }
 
-  private ebullet(kind: number, x: number, y: number, vx: number, vy: number): void {
+  ebullet(kind: number, x: number, y: number, vx: number, vy: number): void {
     const b = this.ebullets[this.ebCur];
     this.ebCur = (this.ebCur + 1) % POOL_EBULLETS;
     b.active = true;
@@ -926,7 +932,7 @@ export class Game {
     b.t = 0;
   }
 
-  private aimed(kind: number, x: number, y: number, speed: number, spreadN: number, spread: number, baseA?: number): void {
+  aimed(kind: number, x: number, y: number, speed: number, spreadN: number, spread: number, baseA?: number): void {
     const a0 = baseA ?? Math.atan2(this.py - y, this.px - x);
     for (let i = 0; i < spreadN; i++) {
       const a = a0 + (spreadN === 1 ? 0 : (i / (spreadN - 1) - 0.5) * spread * (spreadN - 1));
@@ -954,7 +960,7 @@ export class Game {
     // always a fresh entity: entities are never reused
     const e = createEnemy(kind, x, y, (Math.random() * 0x7fffffff) | 0, { size });
     if (e.kind === 'leech') e.auto = false;
-    const hpMul = this.sector.hpMul * (elite ? 1.4 : 1);
+    const hpMul = this.sector.hpMul * (1 + (0.03 + 0.06 * this.runSector()) * (this.run ? this.run.waveInSector : 0)) * (elite ? 1.8 : 1) * (this.hard ? 1.3 : 1);
     const hp = Math.max(1, Math.round(ks.hp * hpMul));
     const u: Unit = {
       id: this.nextId++,
@@ -988,7 +994,7 @@ export class Game {
       flash: 0,
       elite,
       score: Math.round(ks.score * (elite ? 1.6 : 1) * (1 + this.runSector() * 0.3)),
-      contact: ks.contact * (elite ? 1.25 : 1),
+      contact: ks.contact * (elite ? 1.3 : 1),
       pulseHit: -1,
       dead: false,
       life: 0,
@@ -1031,7 +1037,7 @@ export class Game {
   }
 
   /** Spawns one group; returns how many units were created. */
-  private spawnGroup(g: GroupDef, elite: boolean, bx = 0, by = 0): number {
+  spawnGroup(g: GroupDef, elite: boolean, bx = 0, by = 0): number {
     const FW = this.FW;
     const FH = this.FH;
     const cs = Math.random() < 0.5 ? -1 : 1;
@@ -1098,7 +1104,8 @@ export class Game {
           break;
       }
       if (g.kind === 'sentinel' && (g.from === 'boss' || g.from === 'phase' || g.from === 'top' || g.from === 'corners')) [gx, gy] = this.stationFor(side);
-      const u = this.makeUnit(g.kind, x, y, elite && Math.random() < 0.35);
+      const eliteChance = elite ? 0.55 : g.from === 'boss' ? 0 : 0.04 + 0.04 * (this.run ? this.run.waveInSector : 0) + 0.05 * this.runSector();
+      const u = this.makeUnit(g.kind, x, y, Math.random() < eliteChance);
       if (!u) break;
       made++;
       u.from = g.from;
@@ -1139,7 +1146,7 @@ export class Game {
     const e = u.e;
     if (!e.alive) return false;
     if (e.kind === 'wraith' && e.vis < 0.45) return false;
-    if (u.state === U_BOSS && this.bs && (this.bs.inv > 0 || this.bs.entering > 0 || this.bs.dying >= 0)) return false;
+    if (u.state === U_BOSS && this.bc && !this.bc.tangible) return false;
     return e.x > -12 && e.x < this.FW + 12 && e.y > -12 && e.y < this.FH + 12;
   }
 
@@ -1162,7 +1169,7 @@ export class Game {
     this.sfx('enemyShot');
   }
 
-  private countAlive(): number {
+  countAlive(): number {
     let n = 0;
     for (const u of this.units) if (!u.dead && u.state !== U_DYING) n++;
     return n;
@@ -1175,8 +1182,10 @@ export class Game {
     r.waveNo++;
     const sec = this.sector;
     const idx = Math.min(sec.waves.length - 1, r.waveInSector);
-    const groups = sec.waves[idx].groups.slice();
-    if (elite) for (const g of sec.eliteExtra) groups.push(g);
+    const cnt = sec.countMul * (1 + (0.03 + 0.06 * r.sector) * idx) * (this.hard ? 1.2 : 1);
+    const pace = (1 - 0.06 * idx) * (this.hard ? 0.85 : 1);
+    const groups = sec.waves[idx].groups.map((x) => ({ ...x, n: Math.max(1, Math.round(x.n * cnt)), at: x.at * pace }));
+    if (elite) for (const g of sec.eliteExtra) groups.push({ ...g, n: Math.round(g.n * cnt) + 1 });
     groups.sort((a, b) => a.at - b.at);
     this.groups = groups;
     this.groupIdx = 0;
@@ -1227,6 +1236,11 @@ export class Game {
       u.flash = Math.max(0, u.flash - dt);
       if (u.state === U_BOSS) {
         this.updateBossUnit(u, dt);
+        continue;
+      }
+      if (u.state === U_DECOY) {
+        if (this.bc) this.bc.updateDecoy(u, dt, target, intentV);
+        else u.dead = true;
         continue;
       }
       if (u.state === U_DYING) {
@@ -1352,7 +1366,7 @@ export class Game {
               u.stateT = 0;
             } else {
               latched++;
-              if (playing) this.drain(dt * (6 + this.runSector() * 1.5));
+              if (playing) this.drain(dt * 9);
             }
           } else if (u.state === U_RETREAT) {
             intent = this.goal(u, e.x - (dxp / dp) * 120, Math.max(60, Math.min(e.y - 160, this.py - 170)), 79);
@@ -1410,7 +1424,7 @@ export class Game {
             intent = this.goal(u, u.gx, u.gy, u.shotT === -1 ? 20 : 60);
             if (playing && u.shotT === -1 && this.visibleForFire(u)) {
               u.shotT = rand(3, 5);
-              this.queueTell(u, EB_NEEDLE, 3 + Math.min(1, this.runSector()), 0.2, this.sector.bulletSpeed * 1.15);
+              this.queueTell(u, EB_NEEDLE, 3 + this.runSector(), 0.18, this.sector.bulletSpeed * 1.15);
             }
           }
           break;
@@ -1424,8 +1438,8 @@ export class Game {
           if (playing && this.runSector() > 0 && u.state === U_ACT) {
             u.shotT -= dt;
             if (u.shotT <= 0 && this.visibleForFire(u)) {
-              u.shotT = rand(5, 8);
-              this.queueTell(u, EB_PELLET, 2, 0.22, this.sector.bulletSpeed * 0.8);
+              u.shotT = rand(3.5, 6) / (1 + 0.3 * this.runSector());
+              this.queueTell(u, EB_PELLET, 2 + this.runSector(), 0.22, this.sector.bulletSpeed * 0.85);
             }
           }
           break;
@@ -1476,7 +1490,7 @@ export class Game {
       // sentinel shots: the library's charge-up (core + aim line) is the tell
       if (e.kind === 'sentinel' && e.fired && playing && this.visibleForFire(u)) {
         sentinelMuzzle(e, tmpV);
-        this.aimed(EB_ORB, tmpV.x, tmpV.y, this.sector.bulletSpeed, u.elite ? 3 : 1, 0.2, e.aim);
+        this.aimed(EB_ORB, tmpV.x, tmpV.y, this.sector.bulletSpeed, 3 + (u.elite ? 2 : 0) + (this.runSector() >= 2 ? 2 : 0), 0.26, e.aim);
         this.sfx('enemyShot');
       }
     }
@@ -1562,7 +1576,8 @@ export class Game {
     this.fireDirT -= dt;
     if (this.fireDirT <= 0) {
       const sents = this.units.filter((u) => u.e.kind === 'sentinel' && u.state === U_ACT && u.e.mode === 0 && this.visibleForFire(u) && this.onScreen(u.e, 30));
-      this.fireDirT = sec.fireGap * rand(0.7, 1.3) * (sents.length > 3 ? 0.75 : 1) * (this.isBoss ? 1.6 : 1);
+      const waveK = 1 - 0.06 * (this.run ? Math.min(5, this.run.waveInSector) : 0);
+      this.fireDirT = sec.fireGap * waveK * rand(0.7, 1.3) * (sents.length > 3 ? 0.75 : 1) * (this.isBoss ? 1.6 : 1) * (this.hard ? 0.8 : 1);
       if (sents.length) {
         const s = sents[(Math.random() * sents.length) | 0];
         if (s.e.kind === 'sentinel') sentinelCharge(s.e);
@@ -1595,38 +1610,14 @@ export class Game {
     this.resetCombat();
     r.waveNo++;
     const def = this.sector.boss;
-    const u = this.makeUnit('boss', this.FW / 2, -def.size, false, def.size);
+    const e = BossCtl.create(def, this, this.FW / 2, -def.size * 0.6);
+    const u = this.adoptUnit(e, 'boss', Math.round(def.hp * (this.hard ? 1.3 : 1)), U_BOSS);
     if (!u) return;
-    const e = u.e as Boss;
-    u.hp = u.maxHp = def.hp;
     u.r = def.size * 0.3;
-    u.state = U_BOSS;
     u.score = 5000 * (r.sector + 1);
     u.contact = 30;
-    e.dur = 1e9;
-    e.reachCd = 1e9;
     this.boss = u;
-    this.bs = {
-      def,
-      phase: 0,
-      attack: null,
-      atkT: 0,
-      atkStep: 0,
-      atkIdx: 0,
-      gap: 2.2,
-      inv: 0,
-      entering: 3.2,
-      sweep: false,
-      laser: 0,
-      laserX: this.FW / 2,
-      reachNext: 0,
-      dying: -1,
-      spin: 0,
-      windup: 0,
-      vuln: 0,
-      openingBurst: false,
-    };
-    spawnEnemy(e);
+    this.bc = new BossCtl(def, this);
     this.waveActive = true;
     this.isBoss = true;
     this.groups = [];
@@ -1636,46 +1627,40 @@ export class Game {
     this.fireDirT = 4;
     this.strikeT = 5;
     this.hitThisWave = false;
-    this.say(FLAVOR.boss, `${def.name} // ${def.title}`, true, 3);
-    this.sfx('boss');
+    this.sfx(def.variant === 0 ? 'stingWarden' : def.variant === 1 ? 'stingEcho' : 'stingRoot');
     this.pushLog(`breach: ${def.name.toLowerCase()}`);
     this.setPhase('playing');
   }
 
+  /** Wraps an externally created entity as a unit (boss, decoys). */
+  adoptUnit(e: Enemy, kind: EnemyKind, hp: number, state: number): Unit | null {
+    if (this.units.length >= MAX_UNITS) return null;
+    const u: Unit = { ...this.blankUnit(e, kind), hp, maxHp: hp, state };
+    this.units.push(u);
+    return u;
+  }
+
+  /** Final boss: disable a random owned upgrade for a while. */
+  hackRandomUpgrade(seconds: number): string | null {
+    const r = this.run;
+    if (!r || !r.build.length) return null;
+    const pick = r.build[(Math.random() * r.build.length) | 0];
+    this.hacked = pick.id;
+    this.hackT = seconds;
+    this.recomputeStats();
+    this.ev.changed();
+    return UPGRADE_BY_ID[pick.id]?.name ?? null;
+  }
+
   private updateBossUnit(u: Unit, dt: number): void {
-    const bs = this.bs;
+    const bc = this.bc;
     const e = u.e;
-    if (!bs || e.kind !== 'boss') return;
-    const def = bs.def;
-    const target = tmpV;
-    target.x = this.px;
-    target.y = this.py;
-    e.dur = 1e9;
-    if (!bs.sweep) e.reachCd = 1e9;
-
-    // movement
-    let hx = this.FW / 2 + Math.sin(this.time * 0.37) * this.FW * 0.24;
-    let hy = 175 + Math.sin(this.time * 0.74) * 18;
-    let k = 1.6;
-    if (bs.entering > 0) {
-      bs.entering -= dt;
-      hx = this.FW / 2;
-      hy = 175;
-      k = 1.4;
-    } else if (bs.sweep) {
-      hx = clamp(this.px, 120, this.FW - 120);
-      hy = this.FH * 0.34;
-      k = 1.4;
-    } else if (bs.laser > 0) {
-      k = 0.6;
-    }
-    // intent only; the module smooths and caps it
-    intentV.x = clamp((hx - e.x) * k, -170, 170);
-    intentV.y = clamp((hy - e.y) * k, -170, 170);
-    updateEnemy(e, dt, target, bs.dying >= 0 ? null : intentV);
-
-    if (bs.dying >= 0) {
-      bs.dying += dt;
+    if (!bc || e.kind !== 'boss') return;
+    tmpV.x = this.px;
+    tmpV.y = this.py;
+    bc.update(u, dt, tmpV, intentV);
+    if (bc.dying >= 0) {
+      bc.dying += dt;
       if (Math.random() < dt * 14) {
         const a = Math.random() * TAU;
         const d = Math.random() * u.r;
@@ -1684,214 +1669,8 @@ export class Game {
         this.addShake(3);
         this.sfx('death');
       }
-      if (bs.dying > 1.6) this.finishBoss(u);
-      return;
+      if (bc.dying > 1.6) this.finishBoss(u);
     }
-    if (bs.inv > 0) bs.inv -= dt;
-    if (bs.vuln > 0) bs.vuln -= dt;
-    if (bs.entering > 0) return;
-    if (!bs.openingBurst) {
-      bs.openingBurst = true;
-      this.bossSummon(u, 2);
-    }
-
-    // phase transitions
-    const frac = u.hp / u.maxHp;
-    if (bs.phase < def.phases.length && frac <= def.phases[bs.phase]) {
-      bs.phase++;
-      setBossPhase(e, 2);
-      bs.inv = 1.4;
-      bs.attack = null;
-      bs.sweep = false;
-      bs.laser = 0;
-      bs.gap = 1.6;
-      this.clearEnemyBullets();
-      this.hitstop = Math.max(this.hitstop, 0.18);
-      this.addShake(16);
-      for (let i = 0; i < 6; i++) this.particle(P_GLITCH, e.x + rand(-u.r, u.r), e.y + rand(-u.r, u.r), 0, 0, rand(0.1, 0.3), rand(60, 200), C_RED, 0);
-      this.particle(P_RING, e.x, e.y, 400, 0, 0.6, u.r, C_ORANGE, 0);
-      this.say(bs.phase === 1 ? 'SHELL FRACTURED' : 'CORE EXPOSED', `${def.name} // PHASE ${bs.phase + 1}`, true, 2.2);
-      this.ev.sound('boss');
-      this.pushLog(`${def.name.toLowerCase()} phase ${bs.phase + 1}`);
-      bs.vuln = 0;
-      this.bossSummon(u, 2 + bs.phase);
-      return;
-    }
-
-    // attacks
-    if (!bs.attack) {
-      bs.gap -= dt;
-      if (bs.gap <= 0) {
-        const list = def.attacks[Math.min(bs.phase, def.attacks.length - 1)];
-        bs.attack = list[bs.atkIdx % list.length];
-        bs.atkIdx++;
-        bs.atkT = 0;
-        bs.atkStep = 0;
-        bs.spin = Math.random() * TAU;
-        // ring and laser carry their own long charge-up; everything else gets a short tell
-        bs.windup = bs.attack === 'ring' || bs.attack === 'laser' || bs.attack === 'summon' ? 0 : TELL_TIME + 0.1;
-        bossCharge(e);
-        if (bs.attack === 'laser') {
-          bs.laser = 1;
-          bs.laserX = e.x;
-        }
-        if (bs.attack === 'sweep') {
-          bs.sweep = true;
-          bs.reachNext = 0.6;
-          this.say('TENDRIL SWEEP', 'EVADE', true, 1.2);
-        }
-      }
-    } else {
-      this.runAttack(u, e, bs, dt);
-    }
-
-    // tendril damage during sweeps
-    if (bs.sweep && this.dying < 0) {
-      for (const td of e.tendrils) {
-        for (let i = 2; i < td.n; i += 2) {
-          const ddx = td.x[i] - this.px;
-          const ddy = td.y[i] - this.py;
-          if (ddx * ddx + ddy * ddy < 14 * 14) {
-            this.hurtPlayer(14, td.x[i], td.y[i]);
-            break;
-          }
-        }
-      }
-    }
-    // laser
-    if (bs.laser > 0) {
-      const tx = this.px;
-      bs.laserX += clamp(tx - bs.laserX, -1, 1) * (bs.laser === 1 ? 90 : 55 + bs.phase * 15) * dt;
-      if (bs.laser === 2 && Math.abs(this.px - bs.laserX) < 20 && this.py > e.y) this.hurtPlayer(20, this.px, this.py - 10);
-    }
-  }
-
-  private runAttack(u: Unit, e: Boss, bs: BossState, dt: number): void {
-    bs.atkT += dt;
-    if (bs.atkT < bs.windup) return;
-    const t = bs.atkT - bs.windup;
-    const sp = bs.def.bulletSpeed * (1 + bs.phase * 0.08);
-    const ph = bs.phase;
-    const end = (gap: number) => {
-      bs.attack = null;
-      // core exposed: attack-free window with bonus damage
-      bs.vuln = VULN_TIME;
-      bs.gap = Math.max(VULN_TIME + 0.3, bs.def.attackGap * gap * (1 - ph * 0.12));
-      this.sfx('empReady');
-    };
-    switch (bs.attack) {
-      case 'ring': {
-        const bursts = 2 + (ph > 0 ? 1 : 0);
-        const at = 1.1 + bs.atkStep * 0.42;
-        if (bs.atkStep < bursts && t >= at) {
-          const n = 16 + ph * 6;
-          const off = bs.spin + bs.atkStep * (Math.PI / n);
-          for (let i = 0; i < n; i++) {
-            const a = off + (i / n) * TAU;
-            this.ebullet(EB_PELLET, e.x + Math.cos(a) * u.r * 0.6, e.y + Math.sin(a) * u.r * 0.6, Math.cos(a) * sp * 0.8, Math.sin(a) * sp * 0.8);
-          }
-          bs.atkStep++;
-          this.sfx('enemyShot');
-          this.addShake(2);
-        }
-        if (t > 1.1 + bursts * 0.42) end(1);
-        break;
-      }
-      case 'fan': {
-        const volleys = 4 + ph;
-        if (bs.atkStep < volleys && t >= 0.3 + bs.atkStep * 0.3) {
-          this.aimed(EB_ORB, e.x, e.y + u.r * 0.5, sp, 5 + ph * 2, 0.13);
-          bs.atkStep++;
-          this.sfx('enemyShot');
-        }
-        if (t > 0.5 + volleys * 0.3) end(1);
-        break;
-      }
-      case 'spiral': {
-        const dur = 2.6 + ph * 0.6;
-        const arms = 2 + ph;
-        const step = 0.075;
-        while (bs.atkStep * step < Math.min(t, dur)) {
-          const a0 = bs.spin + bs.atkStep * step * (2.4 + ph * 0.5);
-          for (let k = 0; k < arms; k++) {
-            const a = a0 + (k / arms) * TAU;
-            this.ebullet(EB_PELLET, e.x, e.y, Math.cos(a) * sp * 0.72, Math.sin(a) * sp * 0.72);
-          }
-          bs.atkStep++;
-        }
-        if (bs.atkStep % 6 === 0) this.sfx('enemyShot');
-        if (t > dur) end(1.1);
-        break;
-      }
-      case 'sweep': {
-        bs.reachNext -= dt;
-        if (bs.reachNext <= 0) {
-          bs.reachNext = 0.34 - ph * 0.05;
-          e.reachIdx = bs.atkStep % e.tendrils.length;
-          e.reachT = 0;
-          bs.atkStep++;
-        }
-        if (t > 3.6 + ph * 0.6) {
-          bs.sweep = false;
-          e.reachIdx = -1;
-          end(1.2);
-        }
-        break;
-      }
-      case 'laser': {
-        if (bs.laser === 1 && t > 1.2) {
-          bs.laser = 2;
-          this.sfx('laser');
-          this.addShake(6);
-        }
-        if (bs.laser === 2) {
-          if (Math.random() < dt * 30) this.sparks(bs.laserX + rand(-12, 12), this.FH - rand(0, 40), -Math.PI / 2, 1.2, 1, 60, 220, C_ORANGE);
-          if (Math.random() < dt * 4 && ph > 0) this.aimed(EB_PELLET, e.x, e.y, sp * 0.8, 3, 0.4);
-        }
-        if (t > 2.9 + ph * 0.3) {
-          bs.laser = 0;
-          end(1.1);
-        }
-        break;
-      }
-      case 'summon':
-        // summons only come in bursts at phase changes
-        end(0.5);
-        break;
-      case 'rain': {
-        const dur = 2.6;
-        const step = 0.07 - ph * 0.01;
-        while (bs.atkStep * step < Math.min(t, dur)) {
-          // data barrage from the eye, sprayed downward
-          const a = Math.PI / 2 + rand(-0.95, 0.95);
-          const v = sp * rand(0.65, 1.0);
-          this.ebullet(EB_NEEDLE, e.x + Math.cos(a) * u.r * 0.5, e.y + Math.sin(a) * u.r * 0.5, Math.cos(a) * v, Math.sin(a) * v);
-          bs.atkStep++;
-        }
-        if (t > dur) end(1);
-        break;
-      }
-      default:
-        end(1);
-    }
-  }
-
-  private bossSummon(u: Unit, n: number): void {
-    const def = this.bs?.def;
-    if (!def) return;
-    const living = this.countAlive() - 1;
-    const count = Math.min(n, 6 - living);
-    let sentinels = 0;
-    for (const x of this.units) if (!x.dead && x.state !== U_DYING && x.kind === 'sentinel') sentinels++;
-    for (let i = 0; i < count; i++) {
-      let kind = def.summon[(Math.random() * def.summon.length) | 0];
-      // stationary summons soak the player's fire; keep at most two around the boss
-      if (kind === 'sentinel' && sentinels >= 2) kind = 'crawler';
-      if (kind === 'sentinel') sentinels++;
-      this.spawnGroup({ kind, n: 1, from: 'boss', at: 0, gap: 0 }, false, u.e.x, u.e.y);
-    }
-    if (count > 0) this.particle(P_HEX, u.e.x, u.e.y, 60, 0, 0.35, 16, C_ORANGE, 0);
-    this.waveTotal = Math.max(this.waveTotal, count + 1);
   }
 
   private finishBoss(u: Unit): void {
@@ -1913,11 +1692,12 @@ export class Game {
       this.score += u.score * this.mult;
       r.kills++;
     }
-    this.say(`${this.bs?.def.name ?? 'CORE'} PURGED`, 'SECTOR SECURED', false, 2.6);
+    this.bc?.clearHazards();
+    this.say(`${this.bc?.def.name ?? 'CORE'} PURGED`, 'SECTOR SECURED', false, 2.6);
     this.pushLog('sector intelligence purged');
   }
 
-  private clearEnemyBullets(): void {
+  clearEnemyBullets(): void {
     for (const b of this.ebullets) {
       if (!b.active) continue;
       b.active = false;
@@ -1928,9 +1708,12 @@ export class Game {
   // ================================================================ damage
   private hitUnit(u: Unit, dmg: number, crit: boolean, x: number, y: number, chain: number, dx = 0, dy = -1): void {
     if (u.dead || u.state === U_DYING) return;
-    if (u.state === U_BOSS && this.bs && this.bs.vuln > 0) {
-      dmg *= VULN_MULT;
-      if (Math.random() < 0.3) this.sparks(x, y, -Math.PI / 2, 1.6, 2, 80, 260, C_WHITE);
+    if (u.state === U_BOSS && this.bc) {
+      dmg = this.bc.filterDamage(u, dmg, x, y);
+      if (dmg <= 0) {
+        u.flash = 0.04;
+        return;
+      }
     }
     u.hp -= dmg;
     u.flash = 0.08;
@@ -1974,11 +1757,9 @@ export class Game {
     if (u.dead || u.state === U_DYING) return;
     const e = u.e;
     if (u.state === U_BOSS) {
-      if (this.bs && this.bs.dying < 0) {
-        this.bs.dying = 0;
-        this.bs.attack = null;
-        this.bs.laser = 0;
-        this.bs.sweep = false;
+      if (this.bc && this.bc.dying < 0) {
+        this.bc.dying = 0;
+        this.bc.clearHazards();
         this.hitstop = Math.max(this.hitstop, 0.25);
         this.addShake(14);
         this.clearEnemyBullets();
@@ -1986,6 +1767,7 @@ export class Game {
       }
       return;
     }
+    if (u.state === U_DECOY && this.bc) this.bc.explodeDecoy(u);
     // death animation (swarm nodes split into fragments); unit stays until e.done
     u.state = U_DYING;
     u.tellT = 0;
@@ -2063,7 +1845,7 @@ export class Game {
     p.t = 0;
   }
 
-  private hurtPlayer(dmg: number, x: number, y: number): void {
+  hurtPlayer(dmg: number, x: number, y: number): void {
     if (this.dying >= 0 || this.inv > 0 || this.dashT > 0 || this.phase !== 'playing') return;
     if (this.buffShield > 0) {
       this.inv = 0.25;
@@ -2071,9 +1853,9 @@ export class Game {
       this.sfx('shieldHit');
       return;
     }
-    let d = dmg * this.stats.dmgTaken;
+    let d = dmg * this.stats.dmgTaken * this.dmgScale();
     this.sinceHit = 0;
-    this.inv = 0.85;
+    this.inv = 0.7;
     this.hitThisWave = true;
     if (this.shield > 0) {
       const a = Math.min(this.shield, d);
@@ -2098,9 +1880,9 @@ export class Game {
     if (this.hp <= 0) this.playerDeath();
   }
 
-  private drain(amount: number): void {
+  drain(amount: number): void {
     if (this.dying >= 0 || this.buffShield > 0) return;
-    let d = amount * this.stats.dmgTaken;
+    let d = amount * this.stats.dmgTaken * this.dmgScale();
     this.sinceHit = 0;
     this.hitThisWave = true;
     if (this.shield > 0) {
@@ -2330,7 +2112,7 @@ export class Game {
     for (const b of this.bullets) b.active = false;
     if (this.isBoss) {
       this.isBoss = false;
-      this.bs = null;
+      this.bc = null;
       r.afterPick = r.sector >= SECTORS.length - 1 ? 'victory' : 'nextSector';
       this.openOffer('boss');
     } else {
@@ -2421,6 +2203,22 @@ export class Game {
     this.buffShield = Math.max(0, this.buffShield - dt);
     this.buffOver = Math.max(0, this.buffOver - dt);
     this.sinceHit += dt;
+    if (this.hackT > 0) {
+      this.hackT -= dt;
+      if (this.hackT <= 0) {
+        this.hacked = null;
+        this.recomputeStats();
+        this.pushLog('module restored');
+        this.ev.changed();
+      }
+    }
+    if (this.hp > 0 && this.hp < this.stats.maxHp * 0.25) {
+      this.alarmT -= dt;
+      if (this.alarmT <= 0) {
+        this.alarmT = 1.4;
+        this.sfx('alarm');
+      }
+    } else this.alarmT = 0;
     if (st.shieldMax > 0 && this.sinceHit > st.shieldDelay) this.shield = Math.min(st.shieldMax, this.shield + st.shieldRegen * dt);
     if (st.hpDecay > 0 && this.waveActive && this.clearT < 0) this.hp = Math.max(1, this.hp - st.hpDecay * dt);
   }
@@ -2627,9 +2425,9 @@ export class Game {
         b.active = false;
         continue;
       }
-      // shoot down enemy projectiles
+      // shoot down enemy projectiles (pattern bullets are immune)
       for (const eb of this.ebullets) {
-        if (!eb.active) continue;
+        if (!eb.active || eb.kind === EB_HARD) continue;
         const ddx = eb.x - b.x;
         const ddy = eb.y - b.y;
         const rr = eb.r + br + 2;
@@ -2650,6 +2448,13 @@ export class Game {
     for (const b of this.ebullets) {
       if (!b.active) continue;
       b.t += dt;
+      if (b.kind === EB_HOMING) {
+        const cur = Math.atan2(b.vy, b.vx);
+        const na = turnToward(cur, Math.atan2(this.py - b.y, this.px - b.x), 1.15 * dt);
+        const sp = Math.hypot(b.vx, b.vy);
+        b.vx = Math.cos(na) * sp;
+        b.vy = Math.sin(na) * sp;
+      }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       b.life -= dt;

@@ -9,7 +9,7 @@ import { FiPause, FiPlay, FiVolume2, FiVolumeX, FiX } from 'react-icons/fi';
 import { Game } from './cybergame/engine';
 import { Renderer } from './cybergame/render';
 import { Sfx } from './cybergame/audio';
-import { loadAutoFire, loadBest, loadMuted, saveAutoFire, saveMuted } from './cybergame/storage';
+import { loadAutoFire, loadBest, loadHard, loadMuted, saveAutoFire, saveHard, saveMuted } from './cybergame/storage';
 import type { NodeType, Phase, RunSummary } from './cybergame/types';
 import { RARITY_LABEL, SYNERGIES, UPGRADE_BY_ID, computeSynergies } from './cybergame/content/upgrades';
 import type { OwnedUpgrade } from './cybergame/types';
@@ -108,7 +108,7 @@ const SectorProgress = ({ sector, wave, boss }: { sector: number; wave: number; 
 };
 
 /** Owned upgrades by name + effect, plus active synergies explained. */
-const BuildList = ({ build, syn, compact }: { build: OwnedUpgrade[]; syn: ReadonlySet<string>; compact?: boolean }) => {
+const BuildList = ({ build, syn, compact, hacked }: { build: OwnedUpgrade[]; syn: ReadonlySet<string>; compact?: boolean; hacked?: string | null }) => {
   const active = SYNERGIES.filter((x) => syn.has(x.id));
   return (
     <div className="text-left" style={fontUi}>
@@ -128,10 +128,15 @@ const BuildList = ({ build, syn, compact }: { build: OwnedUpgrade[]; syn: Readon
                   <UpgradeIcon id={b.id} size={18} />
                 </span>
                 <span className="min-w-0">
-                  <span className="text-[11px] tracking-[0.08em]" style={{ color: WHITE }}>
+                  <span className="text-[11px] tracking-[0.08em]" style={{ color: hacked === b.id ? '#6a6a72' : WHITE, textDecoration: hacked === b.id ? 'line-through' : undefined }}>
                     {def.name}
                     {b.stacks > 1 ? ` x${b.stacks}` : ''}
                   </span>
+                  {hacked === b.id && (
+                    <span className="ml-2 text-[9px] tracking-[0.2em]" style={{ color: CORE }}>
+                      HACKED // DISABLED
+                    </span>
+                  )}
                   <span className="ml-2 text-[9px] tracking-[0.2em]" style={{ color: def.rarity === 'corrupted' ? CORE : def.rarity === 'rare' ? ORANGE : '#8a8a92' }}>
                     {RARITY_LABEL[def.rarity]}
                   </span>
@@ -192,6 +197,8 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
   const [autoFire, setAutoFire] = useState<boolean>(loadAutoFire);
   const [best, setBest] = useState<number>(0);
   const [seedText, setSeedText] = useState('');
+  const [hard, setHard] = useState<boolean>(loadHard);
+  const hardRef = useRef(hard);
   const seedRef = useRef('');
 
   useEffect(() => {
@@ -220,6 +227,7 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
     if (!g) return;
     let s = seed;
     if (s === undefined && seedRef.current.trim()) s = parseSeed(seedRef.current) ?? undefined;
+    g.hard = hardRef.current;
     g.start(s);
   }, []);
 
@@ -259,7 +267,7 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
     setPhase('menu');
     setSummary(null);
     setBest(game.best);
-    if (import.meta.env.DEV) Object.assign(window, { __cyberGame: game, __cyberRenderer: renderer });
+    if (import.meta.env.DEV) Object.assign(window, { __cyberGame: game, __cyberRenderer: renderer, __cyberSectors: SECTORS });
 
     // ---- sizing (CSS px, backing store scaled by DPR and capped)
     let curW = 0;
@@ -476,7 +484,8 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                 const info = ROUTE_INFO[t];
                 const danger = t === 'elite' || t === 'boss' || t === 'anomaly';
                 const name = bossStep && t === 'repair' ? 'REPAIR, THEN CORE' : info.name;
-                const line = bossStep && t === 'repair' ? 'Restore 40% integrity and refill shields, then engage the sector core.' : info.line;
+                const repPct = Math.round(g.repairFrac() * 100);
+                const line = t === 'repair' ? `Restore ${repPct}% integrity and refill shields, then ${bossStep ? 'engage the sector core' : 'a standard wave'}.` : info.line;
                 return (
                   <button
                     key={t}
@@ -498,7 +507,7 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                     <div className="mt-3 text-[10px] leading-relaxed">
                       <div>
                         <span style={{ color: ORANGE }}>REWARD </span>
-                        <span className="text-neutral-300">{bossStep && t === 'repair' ? '+40% integrity' : info.reward}</span>
+                        <span className="text-neutral-300">{t === 'repair' ? `+${repPct}% integrity, shields refilled` : info.reward}</span>
                       </div>
                       <div>
                         <span style={{ color: CORE }}>RISK </span>
@@ -820,6 +829,30 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                         >
                           INITIALIZE FIREWALL
                         </button>
+                        <div className="flex items-center gap-2 text-[10px] tracking-[0.25em] text-neutral-500" style={fontUi} role="radiogroup" aria-label="Difficulty">
+                          DIFFICULTY
+                          {(['NORMAL', 'HARD'] as const).map((d) => {
+                            const on = (d === 'HARD') === hard;
+                            return (
+                              <button
+                                key={d}
+                                type="button"
+                                role="radio"
+                                aria-checked={on}
+                                onClick={() => {
+                                  const v = d === 'HARD';
+                                  hardRef.current = v;
+                                  saveHard(v);
+                                  setHard(v);
+                                }}
+                                className="px-2 py-1 border tracking-[0.2em] focus:outline-none focus-visible:ring-1 focus-visible:ring-white"
+                                style={{ borderColor: on ? (d === 'HARD' ? CORE : ORANGE) : '#404046', color: on ? WHITE : '#7a7a82', background: on ? 'rgba(240,126,65,0.12)' : 'transparent' }}
+                              >
+                                {d}
+                              </button>
+                            );
+                          })}
+                        </div>
                         <label className="flex items-center gap-2 text-[10px] tracking-[0.25em] text-neutral-500" style={fontUi}>
                           SEED
                           <input
@@ -859,7 +892,7 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                         <div className="mt-4 text-left max-w-md mx-auto max-h-[45vh] overflow-y-auto border border-neutral-800 p-3" style={{ background: 'rgba(7,7,8,0.85)' }}>
                           <SectorProgress sector={run.sector} wave={run.waveInSector} boss={g.isBoss} />
                           <div className="mt-3">
-                            <BuildList build={run.build} syn={g.syn} />
+                            <BuildList build={run.build} syn={g.syn} hacked={g.hacked} />
                           </div>
                           <div className="mt-3 text-[10px] tracking-[0.25em] text-neutral-500" style={fontUi}>
                             SEED {run.seedStr}

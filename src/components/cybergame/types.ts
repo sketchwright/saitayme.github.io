@@ -28,7 +28,11 @@ export type SfxName =
   | 'latch'
   | 'synergy'
   | 'victory'
-  | 'zap';
+  | 'zap'
+  | 'alarm'
+  | 'stingWarden'
+  | 'stingEcho'
+  | 'stingRoot';
 
 /** Logical playfield width; height adapts to the aspect ratio. */
 export const FIELD_W = 600;
@@ -107,6 +111,8 @@ export interface PBullet {
 export const EB_ORB = 0;
 export const EB_PELLET = 1;
 export const EB_NEEDLE = 2;
+export const EB_HOMING = 3; // slow homing memory shard: kite it
+export const EB_HARD = 4; // pattern bullet: cannot be shot down
 
 export interface EBullet {
   active: boolean;
@@ -158,6 +164,7 @@ export const U_SWOOP = 6; // flyer following a swoop path (via intent)
 export const U_FREE = 7; // fragments: library-driven darting
 export const U_DYING = 8; // death animation playing (killEnemy), until e.done
 export const U_BOSS = 9;
+export const U_DECOY = 10; // boss clone: explodes when shot
 
 export type SpawnFrom = 'top' | 'walls' | 'corners' | 'edges' | 'sides' | 'phase' | 'swoop' | 'cluster' | 'boss';
 

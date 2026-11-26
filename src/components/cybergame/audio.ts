@@ -17,6 +17,7 @@ const THROTTLE: Partial<Record<SfxName, number>> = {
   zap: 0.05,
   click: 0.04,
   latch: 0.3,
+  alarm: 1,
 };
 
 export class Sfx {
@@ -195,6 +196,30 @@ export class Sfx {
       case 'victory':
         [262, 330, 392, 523, 659].forEach((f, i) => this.tone('triangle', f, f, 0.5, 0.05, i * 0.16));
         this.tone('sine', 65, 65, 1.6, 0.08);
+        break;
+      case 'stingWarden':
+        // heavy mechanical clang + descending square
+        this.noise(0.5, 0.12, 'bandpass', 400, 120, 3);
+        this.tone('square', 220, 110, 0.5, 0.06);
+        this.tone('square', 165, 82, 0.6, 0.05, 0.25);
+        this.tone('sine', 55, 40, 0.9, 0.1);
+        break;
+      case 'stingEcho':
+        // detuned echoing triangles
+        for (let i = 0; i < 4; i++) {
+          this.tone('triangle', 660 - i * 90, 330 - i * 40, 0.35, 0.05 / (i + 1), i * 0.16);
+          this.tone('triangle', 668 - i * 90, 334 - i * 40, 0.35, 0.04 / (i + 1), i * 0.16 + 0.02);
+        }
+        break;
+      case 'stingRoot':
+        // low drone swelling into a scream
+        this.tone('sawtooth', 40, 80, 1.4, 0.09);
+        this.tone('sawtooth', 41, 160, 1.4, 0.05, 0.3);
+        this.noise(1.3, 0.08, 'bandpass', 200, 5000, 4);
+        break;
+      case 'alarm':
+        this.tone('square', 880, 880, 0.09, 0.025);
+        this.tone('square', 660, 660, 0.12, 0.025, 0.14);
         break;
       case 'zap':
         this.noise(0.08, 0.05, 'highpass', 5000, 2500, 1.5);

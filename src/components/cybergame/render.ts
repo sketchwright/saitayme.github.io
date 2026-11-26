@@ -7,6 +7,8 @@ import {
   C_GRAY,
   C_RED,
   C_WHITE,
+  EB_HARD,
+  EB_HOMING,
   EB_NEEDLE,
   EB_ORB,
   FIELD_W,
@@ -445,10 +447,11 @@ export class Renderer {
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.drawImage(this.side, 0, 0);
     c.setTransform(d, 0, 0, d, 0, 0);
+    this.drawBossScreen(g);
     this.drawTexts(g);
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.drawImage(this.fx, 0, 0);
-    const lowPulse = playing && g.dying < 0 && g.hp < g.stats.maxHp * 0.25 ? 0.16 + 0.1 * Math.sin(g.time * 6) : 0;
+    const lowPulse = playing && g.dying < 0 && g.hp < g.stats.maxHp * 0.25 ? 0.24 + 0.16 * Math.sin(g.time * 7) : 0;
     const drainPulse = g.latchedCount > 0 ? 0.25 + 0.15 * Math.sin(g.time * 9) : 0;
     const hurtA = Math.max(g.damageFlash * 0.85, lowPulse, drainPulse);
     if (hurtA > 0.01) {
@@ -570,43 +573,185 @@ export class Renderer {
       const s = u.state === U_BOSS ? u.r * 2 : e.size * 0.9;
       this.glow(this.glowW, e.x, e.y, s, (u.flash / 0.08) * (u.state === U_BOSS ? 0.25 : 0.5));
     }
-    const bs = g.bs;
+    this.drawBossLayers(g);
+  }
+
+  /** Additive boss gameplay layers: tells, shields, walls, shockwaves, tethers. */
+  private drawBossLayers(g: Game): void {
+    const bc = g.bc;
     const b = g.boss;
-    if (bs && b && bs.attack && bs.atkT < bs.windup) {
-      // boss attack tell: core flare + aim line at the player
-      const c = this.ctx;
-      const f = bs.atkT / Math.max(0.01, bs.windup);
-      this.glow(this.glowR, b.e.x, b.e.y, b.r * (1.5 + f * 1.5), 0.4 + f * 0.5);
-      c.globalAlpha = 0.3 + f * 0.6;
-      c.strokeStyle = CORE;
-      c.lineWidth = 1;
-      c.beginPath();
-      c.moveTo(b.e.x, b.e.y);
-      c.lineTo(g.px, g.py);
-      c.stroke();
-      c.globalAlpha = 1;
+    if (!bc || !b || b.dead) return;
+    const c = this.ctx;
+    const e = b.e;
+    // tell: core flare, plus an aim line for aimed attacks
+    if (bc.tell !== 'none' && bc.dying < 0) {
+      const pulse = 0.5 + 0.5 * Math.sin(g.time * 18);
+      this.glow(this.glowR, e.x, e.y, b.r * (1.6 + pulse * 0.8), 0.45 + pulse * 0.35);
+      if (bc.tell === 'charge' || bc.tell === 'beam' || bc.tell === 'burst') {
+        c.globalAlpha = 0.35 + pulse * 0.4;
+        c.strokeStyle = CORE;
+        c.lineWidth = 1;
+        c.beginPath();
+        const tx = bc.tell === 'charge' && bc.variant === 0 && bc.phase >= 2 ? bc.laneX : g.px;
+        c.moveTo(e.x, e.y);
+        c.lineTo(tx, g.FH);
+        c.stroke();
+      }
     }
-    if (bs && b && bs.vuln > 0 && b.state !== U_DYING) {
-      // exposed core: bright pulsing ring + hot glow on the eye
-      const c = this.ctx;
-      const pulse = 0.5 + 0.5 * Math.sin(g.time * 12);
-      this.glow(this.glowW, b.e.x, b.e.y, b.r * (1.1 + pulse * 0.3), 0.35 + pulse * 0.25);
-      c.globalAlpha = 0.55 + pulse * 0.35;
+    // laser-grid walls with one moving gap
+    for (const w of bc.walls) {
+      if (!w.active) continue;
+      const g0 = w.gapX - w.gapW / 2;
+      const g1 = w.gapX + w.gapW / 2;
+      c.globalAlpha = 0.85;
+      c.fillStyle = CORE;
+      c.fillRect(0, w.y - 2, g0, 4);
+      c.fillRect(g1, w.y - 2, g.FW - g1, 4);
+      c.globalAlpha = 0.25;
+      c.fillRect(0, w.y - 7, g0, 14);
+      c.fillRect(g1, w.y - 7, g.FW - g1, 14);
+      c.globalAlpha = 0.9;
+      c.fillStyle = WHITE;
+      c.fillRect(g0 - 2, w.y - 9, 2, 18);
+      c.fillRect(g1, w.y - 9, 2, 18);
+    }
+    if (bc.tell === 'laserGrid') {
+      c.globalAlpha = 0.3 + 0.3 * Math.sin(g.time * 30);
+      c.strokeStyle = CORE;
+      c.setLineDash([8, 8]);
+      c.beginPath();
+      c.moveTo(0, e.y + b.r);
+      c.lineTo(g.FW, e.y + b.r);
+      c.stroke();
+      c.setLineDash([]);
+    }
+    // ground-pound shockwaves
+    for (const sh of bc.shocks) {
+      if (!sh.active) continue;
+      const f = 1 - sh.r / sh.max;
+      c.globalAlpha = 0.25 * f;
+      c.strokeStyle = ORANGE;
+      c.lineWidth = 18;
+      c.beginPath();
+      c.arc(sh.x, sh.y, sh.r, 0, TAU);
+      c.stroke();
+      c.globalAlpha = 0.9 * f;
       c.strokeStyle = WHITE;
       c.lineWidth = 2;
-      c.beginPath();
-      c.arc(b.e.x, b.e.y, b.r * 0.75 + pulse * 6, 0, TAU);
       c.stroke();
-      c.globalAlpha = 1;
     }
-    if (bs && b && bs.inv > 0) {
-      const c = this.ctx;
+    // ECHO leech tether + its break radius
+    if (bc.tether.on) {
+      const t = bc.tether;
+      c.globalAlpha = 0.25;
+      c.strokeStyle = CORE;
+      c.lineWidth = 1;
+      c.setLineDash([4, 6]);
+      c.beginPath();
+      c.arc(t.ax, t.ay, 170, 0, TAU);
+      c.stroke();
+      c.setLineDash([]);
+      this.glow(this.glowR, g.px, g.py, 50, 0.5);
+    }
+    if (bc.inv > 0) {
       c.globalAlpha = 0.5 + 0.3 * Math.sin(g.time * 30);
       c.strokeStyle = WHITE;
       c.lineWidth = 1.5;
       c.beginPath();
-      hexPath(c, b.e.x, b.e.y, b.r * 1.25, g.time);
+      hexPath(c, e.x, e.y, b.r * 1.25, g.time);
       c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+
+  /** Screen-space boss effects: corrupted edges, static bands, intro card. */
+  private drawBossScreen(g: Game): void {
+    const bc = g.bc;
+    if (!bc) return;
+    const c = this.ctx;
+    const k = g.scale;
+    const x0 = g.fx0;
+    if (bc.inset > 0) {
+      const w = bc.inset * k;
+      c.fillStyle = 'rgba(40,6,4,0.72)';
+      c.fillRect(x0, 0, w, g.H);
+      c.fillRect(x0 + FIELD_W * k - w, 0, w, g.H);
+      c.fillStyle = CORE;
+      for (let i = 0; i < 14; i++) {
+        const y = Math.random() * g.H;
+        c.globalAlpha = 0.15 + Math.random() * 0.25;
+        c.fillRect(x0 + Math.random() * w, y, 2 + Math.random() * 18, 1.5);
+        c.fillRect(x0 + FIELD_W * k - Math.random() * w, y, 2 + Math.random() * 18, 1.5);
+      }
+      c.globalAlpha = 0.9;
+      c.fillRect(x0 + w - 1, 0, 2, g.H);
+      c.fillRect(x0 + FIELD_W * k - w - 1, 0, 2, g.H);
+      c.globalAlpha = 1;
+    }
+    if (bc.tether.on && !g.reducedMotion) {
+      // vision corruption: static bands only
+      for (let i = 0; i < 5; i++) {
+        const y = Math.random() * g.H;
+        const h = 3 + Math.random() * 14;
+        c.globalAlpha = 0.06 + Math.random() * 0.1;
+        c.fillStyle = Math.random() < 0.5 ? '#8a8a92' : ORANGE;
+        c.fillRect(x0, y, FIELD_W * k, h);
+      }
+      c.globalAlpha = 1;
+    }
+    if (bc.intro > 0) {
+      const t = 3 - bc.intro;
+      const a = Math.min(1, bc.intro * 2, t * 4);
+      c.globalAlpha = 0.55 * a;
+      c.fillStyle = '#000';
+      c.fillRect(0, 0, g.W, g.H);
+      // warning bars
+      const barH = 22;
+      c.globalAlpha = 0.9 * a;
+      for (const y of [g.H * 0.3, g.H * 0.62]) {
+        c.save();
+        c.beginPath();
+        c.rect(0, y, g.W, barH);
+        c.clip();
+        c.fillStyle = '#1a0c06';
+        c.fillRect(0, y, g.W, barH);
+        c.fillStyle = CORE;
+        const off = (g.time * 60) % 28;
+        for (let x = -40 + off; x < g.W + 40; x += 28) {
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x + 14, y);
+          c.lineTo(x + 14 - barH, y + barH);
+          c.lineTo(x - barH, y + barH);
+          c.closePath();
+          c.fill();
+        }
+        c.restore();
+      }
+      const slam = Math.max(1, 2.2 - t * 6);
+      const cx = g.W / 2;
+      const cy = g.H * 0.46;
+      c.save();
+      c.translate(cx + (t < 0.35 ? (Math.random() - 0.5) * 10 : 0), cy);
+      c.scale(slam, slam);
+      c.globalAlpha = a;
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.font = `700 ${g.W < 640 ? 26 : 44}px ${FONT_H}`;
+      c.letterSpacing = '6px';
+      c.fillStyle = CORE;
+      c.fillText(bc.def.name, 3, 2);
+      c.fillStyle = WHITE;
+      c.fillText(bc.def.name, 0, 0);
+      c.restore();
+      c.globalAlpha = a;
+      c.letterSpacing = '4px';
+      c.font = `500 ${g.W < 640 ? 9 : 12}px ${FONT_UI}`;
+      c.textAlign = 'center';
+      c.fillStyle = ORANGE;
+      c.fillText(`WARNING // ${bc.def.title} // SECTOR BREACH`, cx, cy + (g.W < 640 ? 30 : 44));
+      c.letterSpacing = '0px';
+      c.textBaseline = 'alphabetic';
       c.globalAlpha = 1;
     }
   }
@@ -766,14 +911,14 @@ export class Renderer {
   }
 
   private drawLaser(g: Game, additive: boolean): void {
-    const bs = g.bs;
+    const bc = g.bc;
     const b = g.boss;
-    if (!bs || !b || bs.laser === 0) return;
+    if (!bc || !b || bc.beam === 0) return;
     const c = this.ctx;
-    const x = bs.laserX;
+    const x = bc.beamX;
     const y0 = b.e.y + b.r * 0.4;
     const y1 = g.FH + 20;
-    if (bs.laser === 1) {
+    if (bc.beam === 1) {
       if (additive) return;
       const f = 0.5 + 0.5 * Math.sin(g.time * 40);
       c.strokeStyle = `rgba(255,90,42,${(0.35 + f * 0.35).toFixed(2)})`;
@@ -813,6 +958,23 @@ export class Renderer {
         c.globalAlpha = 0.95;
         c.fillStyle = WHITE;
         c.fillRect(b.x - 1.5, b.y - 1.5, 3, 3);
+      } else if (b.kind === EB_HARD) {
+        // unshootable pattern bullet: darker core, hard white rim
+        this.glow(this.glowR, b.x, b.y, 20, 0.6);
+        c.globalAlpha = 0.95;
+        c.strokeStyle = WHITE;
+        c.lineWidth = 1.2;
+        c.beginPath();
+        c.arc(b.x, b.y, 4.5, 0, TAU);
+        c.stroke();
+      } else if (b.kind === EB_HOMING) {
+        this.glow(this.glowR, b.x, b.y, 30, 0.6);
+        c.globalAlpha = 0.95;
+        c.strokeStyle = WHITE;
+        c.lineWidth = 1.5;
+        c.beginPath();
+        hexPath(c, b.x, b.y, 6, b.t * 4);
+        c.stroke();
       } else if (b.kind === EB_NEEDLE) {
         const sp = Math.hypot(b.vx, b.vy) || 1;
         c.globalAlpha = 0.9;
@@ -1131,21 +1293,30 @@ export class Renderer {
       }
     }
     const b = g.boss;
-    const bs = g.bs;
-    if (b && bs && !b.dead) {
+    const bc = g.bc;
+    if (b && bc && !b.dead) {
       const w = Math.min(420, (wide ? fr - fl : W) - 60);
       const y = top + (small ? 40 : 44);
-      const exposed = bs.vuln > 0;
-      this.label(exposed ? `CORE EXPOSED // x1.5 DAMAGE // ${bs.vuln.toFixed(1)}s` : `${bs.def.name} // ${bs.def.title}`, cx, y, 'center', exposed ? (Math.sin(g.time * 10) > 0 ? WHITE : ORANGE) : CORE, 9);
+      const hint =
+        bc.variant === 0 && bc.phase < 2 && bc.shields.some((x) => x > 0)
+          ? 'SHOOT OFF THE SHIELD SEGMENTS'
+          : bc.variant === 1 && bc.phase >= 1
+            ? 'DECOYS EXPLODE // FIND THE REAL ONE'
+            : bc.tether.on
+              ? 'TETHERED // MOVE AWAY TO BREAK IT'
+              : bc.inset > 0
+                ? 'AVOID THE CORRUPTED EDGES'
+                : bc.def.title;
+      this.label(`${bc.def.name} // P${bc.phase + 1} // ${hint}`, cx, y, 'center', CORE, 9);
       c.fillStyle = 'rgba(255,90,42,0.15)';
       c.fillRect(cx - w / 2, y + 6, w, 5);
-      c.fillStyle = bs.inv > 0 ? WHITE : CORE;
+      c.fillStyle = bc.inv > 0 ? WHITE : CORE;
       c.fillRect(cx - w / 2, y + 6, w * Math.max(0, b.hp / b.maxHp), 5);
       c.fillStyle = '#050506';
       for (let i = 1; i < 20; i++) c.fillRect(cx - w / 2 + (w * i) / 20, y + 6, 1, 5);
       // phase ticks
       c.fillStyle = WHITE;
-      for (const p of bs.def.phases) c.fillRect(cx - w / 2 + w * p - 1, y + 3, 2, 11);
+      for (const p of [0.66, 0.33]) c.fillRect(cx - w / 2 + w * p - 1, y + 3, 2, 11);
     } else if (g.waveActive) {
       let alive = 0;
       for (const u of g.units) if (!u.dead) alive++;
@@ -1188,7 +1359,10 @@ export class Renderer {
     const by = H - pad - 20;
     const lit = Math.ceil((this.dispHp / st.maxHp) * segs);
     const flick = low && Math.sin(g.time * 20) > 0.5;
-    this.label('INTEGRITY', L + 8, by - 12, 'left');
+    const critical = g.hp > 0 && g.hp < st.maxHp * 0.25;
+    if (critical && !g.reducedMotion && Math.random() < 0.06) c.globalAlpha = 0.45; // HUD flicker
+    this.label(critical ? (Math.sin(g.time * 9) > 0 ? 'INTEGRITY CRITICAL' : '') : 'INTEGRITY', L + 8, by - 12, 'left', critical ? CORE : '#8a8a92');
+    c.globalAlpha = 1;
     c.font = `700 12px ${FONT_H}`;
     c.textAlign = 'right';
     c.fillStyle = low ? CORE : WHITE;
@@ -1262,7 +1436,10 @@ export class Renderer {
           c.font = `500 9px ${FONT_UI}`;
           c.textAlign = 'left';
           c.fillStyle = col;
-          c.fillText(`${def.name}${bu.stacks > 1 ? ` x${bu.stacks}` : ''}`.slice(0, 26), R - 170, y);
+          const hackedNow = g.hacked === bu.id;
+          if (hackedNow) c.fillStyle = Math.sin(g.time * 10) > 0 ? CORE : '#5a5a60';
+          c.fillText(hackedNow ? `${def.name} // HACKED` .slice(0, 26) : `${def.name}${bu.stacks > 1 ? ` x${bu.stacks}` : ''}`.slice(0, 26), R - 170, y);
+          if (hackedNow) c.fillRect(R - 170, y - 3, 150, 1);
           y += 15;
           if (y > H * 0.78) break;
         }
