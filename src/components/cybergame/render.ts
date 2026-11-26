@@ -1604,6 +1604,20 @@ export class Renderer {
       c.fillStyle = i < lit ? (flick ? '#5a1e1a' : col) : 'rgba(240,126,65,0.12)';
       c.fillRect(L + 8 + i * (sw + gap), by, sw, 7);
     }
+    if (g.healFlash > 0) {
+      // heal pulse: the lit bar flashes off-white and fades back to orange
+      c.globalAlpha = g.healFlash * 0.7;
+      c.fillStyle = WHITE;
+      for (let i = 0; i < lit; i++) c.fillRect(L + 8 + i * (sw + gap), by, sw, 7);
+      c.globalAlpha = 1;
+    }
+    // remaining heal budget this wave (general / on-kill)
+    if (g.waveActive) {
+      const hb = Math.round((g.healBudget / st.maxHp) * 100);
+      const sb = Math.round((g.stealBudget / st.maxHp) * 100);
+      const txt = st.lifesteal > 0 ? `HEAL ${hb}%  ·  ON-KILL ${sb}%` : `HEAL ${hb}%`;
+      this.label(txt, L + 8, by + (st.shieldMax > 0 ? 22 : 18), 'left', hb + sb > 0 ? '#8a8a92' : CORE, 8);
+    }
     if (st.shieldMax > 0) {
       c.fillStyle = 'rgba(244,239,232,0.12)';
       c.fillRect(L + 8, by + 10, barW, 2);

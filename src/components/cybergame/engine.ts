@@ -232,6 +232,12 @@ export class Game implements BossHost {
   private empUses = 0;
   /** healing left this wave (all sources share it) and lifesteal fatigue */
   healBudget = 0;
+  /** on-kill healing (lifesteal / vampiric) has its own per-wave budget so the vampiric drawback stays worth it */
+  stealBudget = 0;
+  /** recent healing, shown as a floating +N and a pulse on the integrity bar */
+  healFlash = 0;
+  private healShow = 0;
+  private healShowT = 0;
   private lsRecent = 0;
   pulseR = -1;
   pulseSerial = 0;
@@ -643,6 +649,7 @@ export class Game implements BossHost {
     this.buffRapid = this.buffShield = this.buffOver = 0;
     this.pulseR = -1;
     this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
+    this.stealBudget = this.stats.maxHp * (this.hard ? 0.4 : 0.5);
     this.dashT = 0;
     this.inv = 0;
     this.latchedCount = 0;
@@ -1835,6 +1842,7 @@ export class Game implements BossHost {
     this.strikeT = 4;
     this.hitThisWave = false;
     this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
+    this.stealBudget = this.stats.maxHp * (this.hard ? 0.4 : 0.5);
     const label = `SECTOR ${r.sector + 1} // WAVE ${r.waveInSector + 1}/${sec.waves.length}`;
     if (elite) {
       this.say(FLAVOR.elite[(Math.random() * FLAVOR.elite.length) | 0], label, true, 2.4);
@@ -2315,6 +2323,7 @@ export class Game implements BossHost {
     this.strikeT = 5;
     this.hitThisWave = false;
     this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
+    this.stealBudget = this.stats.maxHp * (this.hard ? 0.4 : 0.5);
     this.sfx(def.variant === 0 ? 'stingWarden' : def.variant === 1 ? 'stingEcho' : 'stingRoot');
     this.pushLog(`breach: ${def.name.toLowerCase()}`);
     this.setPhase('playing');
@@ -2920,7 +2929,14 @@ export class Game implements BossHost {
     this.inv = Math.max(0, this.inv - dt);
     this.dashCdT = Math.max(0, this.dashCdT - dt);
     if (st.pulse && this.empCharge < this.empCost && this.waveActive) this.empCharge = Math.min(this.empCost, this.empCharge + (dt / 120) * st.pulseRecharge);
-    this.lsRecent = Math.max(0, this.lsRecent - dt * 0.8);
+    this.lsRecent = Math.max(0, this.lsRecent - dt * 2);
+    this.healFlash = Math.max(0, this.healFlash - dt * 2.5);
+    this.healShowT -= dt;
+    if (this.healShowT <= 0 && this.healShow >= 0.5) {
+      this.text(this.px, this.py - 34, `+${Math.round(this.healShow)}`, C_WHITE, false);
+      this.healShow = 0;
+      this.healShowT = 0.3;
+    }
     this.buffRapid = Math.max(0, this.buffRapid - dt);
     this.buffShield = Math.max(0, this.buffShield - dt);
     this.buffOver = Math.max(0, this.buffOver - dt);
@@ -2942,7 +2958,8 @@ export class Game implements BossHost {
       }
     } else this.alarmT = 0;
     if (st.shieldMax > 0 && this.sinceHit > st.shieldDelay) this.shield = Math.min(st.shieldMax, this.shield + st.shieldRegen * dt);
-    if (st.hpDecay > 0 && this.waveActive && this.clearT < 0) this.hp = Math.max(1, this.hp - st.hpDecay * dt);
+    if (st.hpDecay > 0 && this.waveActive && this.clearT < 0 && !(this.isBoss && this.bc && (this.bc.inv > 0 || this.bc.entering > 0)))
+      this.hp = Math.max(1, this.hp - st.hpDecay * (this.isBoss ? 0.5 : 1) * dt);
   }
 
   private updateWeapons(dt: number): void {
@@ -3045,16 +3062,24 @@ export class Game implements BossHost {
     if (this.isBoss && this.bc && (this.bc.inv > 0 || this.bc.entering > 0)) return 0; // no heals in transitions
     let a = amount * (this.isBoss ? 0.5 : 1);
     if (kind === 'steal') {
-      a /= 1 + this.lsRecent * 0.3;
+      a /= 1 + Math.min(this.lsRecent, 5) * 0.13;
       this.lsRecent += 1;
-    }
-    if (kind !== 'node' && this.waveActive) {
+      if (this.waveActive) {
+        a = Math.min(a, this.stealBudget);
+        this.stealBudget -= a;
+      }
+    } else if (kind !== 'node' && this.waveActive) {
       a = Math.min(a, this.healBudget);
       this.healBudget -= a;
     }
     const before = this.hp;
     this.hp = Math.min(this.stats.maxHp, this.hp + a);
-    return this.hp - before;
+    const got = this.hp - before;
+    if (got > 0) {
+      this.healFlash = 1;
+      this.healShow += got;
+    }
+    return got;
   }
 
   /** EMP: stuns, strips shields, clears enemy shots. Small capped damage; bosses only get interrupted. */
