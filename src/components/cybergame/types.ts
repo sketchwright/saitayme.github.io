@@ -234,6 +234,8 @@ export interface Unit {
   phaseT: number;
   phaseCd: number;
   hunted: boolean;
+  /** EMP stun seconds left */
+  stunT: number;
 }
 
 export const MAX_UNITS = 72;

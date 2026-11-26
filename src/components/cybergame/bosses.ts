@@ -108,6 +108,13 @@ export class BossCtl {
   inset = 0;
   private hackT = 3;
   desperate = false;
+  // ---- phase gates / armor
+  /** attacks finished in the current phase */
+  cycles = 0;
+  phaseT = 0;
+  /** >0 briefly when damage hit the phase gate (for the HUD) */
+  gated = 0;
+  private recent = 0;
 
   constructor(def: BossDef, private readonly host: BossHost) {
     this.def = def;
@@ -203,7 +210,10 @@ export class BossCtl {
 
     if (this.dying >= 0) return;
     if (this.inv > 0) this.inv -= dt;
+    if (this.gated > 0) this.gated -= dt;
+    this.recent *= Math.exp(-dt * 0.5);
     if (this.entering > 0) return;
+    this.phaseT += dt;
 
     // phases at 66% / 33%
     const frac = u.hp / u.maxHp;
@@ -231,6 +241,7 @@ export class BossCtl {
     } else if (this.attack) {
       this.atkT += dt;
       if (this.runAttack(u, e, dt)) {
+        this.cycles++;
         this.attack = null;
         this.setTell(e, 'none');
         this.gap = this.gapFor();
@@ -248,7 +259,7 @@ export class BossCtl {
 
   private queue(e: Boss, a: string): void {
     this.pending = a;
-    this.tellT = this.variant === 0 && this.phase >= 2 && a === 'charge' ? 0.45 : TELL;
+    this.tellT = (this.variant === 0 && this.phase >= 2 && a === 'charge' ? 0.45 : TELL) * (this.host.hard ? 0.75 : 1);
     const map: Record<string, BossTell> = {
       bursts: 'burst',
       triple: 'burst',
@@ -272,7 +283,8 @@ export class BossCtl {
     if (a === 'beam') this.beamX = e.x;
   }
 
-  private nextAttack(): string {
+  /** Current phase's attack list (HARD adds an extra pattern per phase). */
+  private phaseList(): string[] {
     const lists: string[][][] = [
       // WARDEN: bursts through the shield -> laser grid walls -> lane charges + triple bursts
       [['bursts'], ['grid', 'bursts', 'grid', 'bursts'], ['charge', 'triple', 'charge', 'charge', 'triple']],
@@ -281,7 +293,53 @@ export class BossCtl {
       // ROOT: spirals -> tracking beam + summons -> everything, with hacks
       [['spiral', 'spiral2'], ['beam', 'spiral', 'summon', 'beam'], ['spiral', 'beam', 'hack', 'fan', 'spiral2', 'summon']],
     ];
-    let list = lists[this.variant][Math.min(this.phase, 2)];
+    const extra = [
+      ['triple', 'triple', 'grid'],
+      ['shards', 'lash', 'shards'],
+      ['fan', 'fan', 'beam'],
+    ];
+    const list = lists[this.variant][Math.min(this.phase, 2)].slice();
+    if (this.host.hard) list.push(extra[this.variant][Math.min(this.phase, 2)]);
+    return list;
+  }
+
+  /** The next phase can't start until one full pattern of this one has run (and 8 s). */
+  gateOpen(): boolean {
+    return this.cycles >= this.phaseList().length && this.phaseT >= 8;
+  }
+
+  /** Lowest hp damage may take the boss to right now (phase gate). */
+  floor(u: Unit): number {
+    const thr = this.phase < PHASES.length ? PHASES[this.phase] * u.maxHp : 0;
+    return this.gateOpen() ? thr : thr + Math.max(1, u.maxHp * 0.01);
+  }
+
+  /** Diminishing damage above ~1/22 of max hp per second (floors the kill time). */
+  armor(u: Unit, dmg: number): number {
+    const allowed = u.maxHp / 22;
+    const now = this.recent * 0.5;
+    const k = now > allowed ? Math.pow(allowed / now, 0.6) : 1;
+    const out = dmg * k;
+    this.recent += out;
+    return out;
+  }
+
+  /** EMP: cancels the queued / running attack once (bosses are never stunned). */
+  interrupt(e: Enemy): void {
+    if (this.inv > 0 || this.entering > 0 || this.dying >= 0) return;
+    if (!this.pending && !this.attack) return;
+    this.pending = null;
+    this.attack = null;
+    this.chargeStage = 0;
+    this.beam = 0;
+    this.setTell(e, 'none');
+    this.gap = 1.2;
+    this.host.particle(P_RING, e.x, e.y, 160, 0, 0.35, 30, C_WHITE, 0);
+    this.host.say('ATTACK INTERRUPTED', 'EMP', false, 0.9);
+  }
+
+  private nextAttack(): string {
+    let list = this.phaseList();
     if (this.desperate) list = ['spiral', 'beam', 'fan', 'spiral2'];
     let a = list[this.idx % list.length];
     this.idx++;
@@ -300,7 +358,10 @@ export class BossCtl {
     const h = this.host;
     this.phase = p;
     setBossPhase(e, p);
-    this.inv = 1.2;
+    this.inv = 1.5;
+    this.cycles = 0;
+    this.phaseT = 0;
+    this.idx = 0;
     this.attack = null;
     this.pending = null;
     this.setTell(e, 'none');
@@ -553,11 +614,11 @@ export class BossCtl {
           this.beam = 2;
           h.addShake(6);
         }
-        const speed = this.beam === 1 ? 90 : 125 + ph * 15;
+        const speed = this.beam === 1 ? 80 : 105 + ph * 12;
         this.beamX += clamp(h.px - this.beamX, -speed * dt, speed * dt);
-        if (this.beam === 2 && Math.abs(h.px - this.beamX) < 18 && h.py > e.y) h.hurtPlayer(18, h.px, h.py - 10);
+        if (this.beam === 2 && Math.abs(h.px - this.beamX) < 16 && h.py > e.y) h.hurtPlayer(13, h.px, h.py - 10);
         if (this.beam === 2 && Math.random() < dt * 24) h.sparks(this.beamX + rand(-10, 10), h.FH - rand(0, 40), -Math.PI / 2, 1.2, 1, 60, 220, C_ORANGE);
-        if (t > 3.8 + ph * 0.4) {
+        if (t > 3.0 + ph * 0.3) {
           this.beam = 0;
           return true;
         }

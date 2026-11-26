@@ -226,7 +226,13 @@ export class Game implements BossHost {
   dashCdT = 0;
   dashDx = 0;
   dashDy = -1;
-  pulseCdT = 0;
+  /** EMP charge (kills fill it); each use in a sector raises the cost */
+  empCharge = 0;
+  empCost = 1;
+  private empUses = 0;
+  /** healing left this wave (all sources share it) and lifesteal fatigue */
+  healBudget = 0;
+  private lsRecent = 0;
   pulseR = -1;
   pulseSerial = 0;
   pulseX = 0;
@@ -636,6 +642,7 @@ export class Game implements BossHost {
     this.mult = 1;
     this.buffRapid = this.buffShield = this.buffOver = 0;
     this.pulseR = -1;
+    this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
     this.dashT = 0;
     this.inv = 0;
     this.latchedCount = 0;
@@ -734,7 +741,7 @@ export class Game implements BossHost {
           this.hp = Math.max(1, this.hp - this.stats.maxHp * f);
         },
         heal: (f) => {
-          this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * f);
+          this.heal(this.stats.maxHp * f, 'node');
         },
         offer: (rar) => {
           offered = true;
@@ -891,6 +898,8 @@ export class Game implements BossHost {
       this.theme = this.sector.theme;
       this.pushLog(`descending: ${this.sector.name.toLowerCase()}`);
       this.ev.sound('sector');
+      this.empUses = 0;
+      this.empCost = 1;
       this.makeRoutes();
       return;
     }
@@ -1090,6 +1099,7 @@ export class Game implements BossHost {
       phaseT: 0,
       phaseCd: rand(2, 4),
       hunted: false,
+      stunT: 0,
     };
     this.units.push(u);
     return u;
@@ -1212,7 +1222,7 @@ export class Game implements BossHost {
           break;
       }
       if (g.kind === 'sentinel' && (g.from === 'boss' || g.from === 'phase' || g.from === 'top' || g.from === 'corners')) [gx, gy] = this.stationFor(side);
-      const eliteChance = this.phase === 'menu' ? 0 : elite ? 0.55 : g.from === 'boss' ? 0 : 0.04 + 0.04 * (this.run ? this.run.waveInSector : 0) + 0.05 * this.runSector();
+      const eliteChance = this.phase === 'menu' ? 0 : (elite ? 0.55 : g.from === 'boss' ? 0 : 0.04 + 0.04 * (this.run ? this.run.waveInSector : 0) + 0.05 * this.runSector()) * (this.hard ? 1.6 : 1);
       const u = this.makeUnit(g.kind, x, y, Math.random() < eliteChance);
       if (!u) break;
       made++;
@@ -1276,10 +1286,15 @@ export class Game implements BossHost {
   }
 
   private applyRole(u: Unit, role: Role): void {
+    if (role === 'shieldBearer') {
+      let n = 0;
+      for (const o of this.units) if (!o.dead && o.state !== U_DYING && o.role === 'shieldBearer') n++;
+      if (n >= 2) role = '';
+    }
     u.role = role;
     u.roleT = rand(1.5, 3);
     if (role === 'shieldBearer') {
-      u.domeMax = Math.round(u.maxHp * 1.2);
+      u.domeMax = Math.round(u.maxHp * 0.8);
       u.dome = u.domeMax;
       u.e.shieldR = 105;
     }
@@ -1288,7 +1303,7 @@ export class Game implements BossHost {
 
   private rollAffixes(u: Unit): void {
     const pool = this.sector.affixes.slice();
-    const n = this.runSector() >= 2 && Math.random() < 0.4 ? 2 : 1;
+    const n = Math.random() < (this.hard ? 0.25 + 0.25 * this.runSector() : this.runSector() >= 2 ? 0.4 : 0) ? 2 : 1;
     const out: Affix[] = [];
     for (let i = 0; i < n && pool.length; i++) out.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
     u.affixes = out;
@@ -1321,16 +1336,12 @@ export class Game implements BossHost {
       case 'flanker': {
         if (e.kind !== 'crawler' && e.kind !== 'fragment') return undefined;
         if (e.mode !== 0) return null;
-        rolePoint.x = px;
-        rolePoint.y = py;
-        roleIntent.mode = 'surround';
-        roleIntent.radius = 150;
-        roleIntent.angle = u.side < 0 ? -Math.PI * 0.82 : -Math.PI * 0.18;
+        const fa = u.side < 0 ? -Math.PI * 0.82 : -Math.PI * 0.18;
         if (playing && u.roleT <= 0 && dp < 200 && e.kind === 'crawler') {
           crawlerLunge(e);
           u.roleT = rand(2.2, 3.4);
         }
-        return roleIntent;
+        return this.goal(u, clamp(px + Math.cos(fa) * 150, 30, this.FW - 30), clamp(py + Math.sin(fa) * 150, 40, this.FH - 40), 86 * hasted);
       }
       case 'diver': {
         if (e.kind === 'crawler' && e.mode !== 0) return null;
@@ -1338,13 +1349,9 @@ export class Game implements BossHost {
         return this.goal(u, px, py, 86 * hasted);
       }
       case 'surrounder': {
-        rolePoint.x = px;
-        rolePoint.y = py;
-        roleIntent.mode = 'surround';
-        roleIntent.radius = 175;
-        roleIntent.angle = -Math.PI / 2 + ((u.cidx % 5) - 2) * 0.42 + (u.cluster % 2 ? 0.2 : -0.2);
+        const a = -Math.PI / 2 + ((u.cidx % 5) - 2) * 0.42 + (u.cluster % 2 ? 0.2 : -0.2);
         this.swarmShot(u, dt, playing);
-        return roleIntent;
+        return this.goal(u, clamp(px + Math.cos(a) * 175, 30, this.FW - 30), clamp(py + Math.sin(a) * 175, 40, this.FH - 40), 70);
       }
       case 'dodger': {
         if (e.kind !== 'wraith') return undefined;
@@ -1369,8 +1376,8 @@ export class Game implements BossHost {
           return roleIntent;
         }
         roleIntent.threatDir = undefined;
-        rolePoint.x = this.px;
-        rolePoint.y = Math.max(90, this.py - 230);
+        rolePoint.x = clamp(this.px, 160, this.FW - 160);
+        rolePoint.y = Math.max(150, this.py - 230);
         roleIntent.mode = 'orbit';
         roleIntent.radius = 130;
         if (playing && u.shotT === -1 && this.visibleForFire(u)) {
@@ -1383,7 +1390,7 @@ export class Game implements BossHost {
         let best: Unit | null = null;
         let bf = 1;
         for (const o of this.units) {
-          if (o === u || o.dead || o.state === U_DYING || o.state === U_BOSS || o.delay > 0) continue;
+          if (o === u || o.dead || o.state === U_DYING || o.state === U_BOSS || o.delay > 0 || o.role === 'mender') continue;
           const f = o.hp / o.maxHp;
           if (f >= bf) continue;
           if ((o.e.x - e.x) ** 2 + (o.e.y - e.y) ** 2 > 280 * 280) continue;
@@ -1392,10 +1399,10 @@ export class Game implements BossHost {
         }
         if (best) {
           e.mendTarget = best.e;
-          best.hp = Math.min(best.maxHp, best.hp + best.maxHp * 0.06 * dt);
+          best.hp = Math.min(best.maxHp, best.hp + best.maxHp * 0.025 * dt);
           if (Math.random() < dt * 6) this.particle(P_EMBER, best.e.x, best.e.y, 0, -20, 0.3, 10, C_ORANGE, 0);
-          rolePoint.x = best.e.x;
-          rolePoint.y = best.e.y - 20;
+          rolePoint.x = clamp(best.e.x, 90, this.FW - 90);
+          rolePoint.y = clamp(best.e.y - 20, 90, this.FH - 90);
           roleIntent.mode = 'orbit';
           roleIntent.radius = 70;
         } else {
@@ -1430,7 +1437,7 @@ export class Game implements BossHost {
         const sniper = u.role === 'sniper';
         if (u.pt === 0 && u.roleT <= 0 && playing && this.visibleForFire(u) && this.onScreen(e, 30)) {
           u.pt = 1;
-          u.roleT = sniper ? 1.7 : 0.75;
+          u.roleT = (sniper ? 1.7 : 0.75) * (this.hard ? 0.75 : 1);
           u.tellA = Math.atan2(this.py - e.y, this.px - e.x);
         } else if (u.pt === 1) {
           // charge: sniper keeps tracking until the last 0.45 s, suppressor locks immediately
@@ -1520,7 +1527,7 @@ export class Game implements BossHost {
       this.sparks(x, y, Math.atan2(y - b.e.y, x - b.e.x), 1.2, 2, 80, 220, C_WHITE);
       if (b.dome <= 0) {
         b.dome = 0;
-        b.roleT = 6;
+        b.roleT = 8;
         b.e.role = undefined;
         this.particle(P_RING, b.e.x, b.e.y, 120, 0, 0.35, 30, C_WHITE, 0);
         this.sfx('shieldHit');
@@ -1773,7 +1780,7 @@ export class Game implements BossHost {
   /** Start a shot tell: core flash + aim line for TELL_TIME, then fire if still visible. */
   private queueTell(u: Unit, kind: number, n: number, spread: number, speed: number): void {
     if (u.tellT > 0 || this.phase !== 'playing') return;
-    u.tellT = TELL_TIME;
+    u.tellT = this.hard ? TELL_TIME * 0.75 : TELL_TIME;
     u.tellA = Math.atan2(this.py - u.e.y, this.px - u.e.x);
     u.tellKind = kind;
     u.tellN = n;
@@ -1827,6 +1834,7 @@ export class Game implements BossHost {
     this.fireDirT = 2.5;
     this.strikeT = 4;
     this.hitThisWave = false;
+    this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
     const label = `SECTOR ${r.sector + 1} // WAVE ${r.waveInSector + 1}/${sec.waves.length}`;
     if (elite) {
       this.say(FLAVOR.elite[(Math.random() * FLAVOR.elite.length) | 0], label, true, 2.4);
@@ -1875,6 +1883,16 @@ export class Game implements BossHost {
         updateEnemy(e, dt, target, null);
         this.adoptFragments(u);
         if (e.done) u.dead = true;
+        continue;
+      }
+      if (u.stunT > 0) {
+        u.stunT -= dt;
+        u.tellT = 0;
+        u.pt = 0;
+        if (e.kind === 'sentinel' && e.mode !== 0) e.modeT = 0;
+        updateEnemy(e, dt, target, HOLD);
+        e.charge = 0;
+        if (Math.random() < dt * 6) this.particle(P_SPARK, e.x + rand(-u.r, u.r), e.y + rand(-u.r, u.r), rand(-60, 60), rand(-60, 60), 0.15, 1, C_WHITE, 4);
         continue;
       }
       // suppress library auto-attacks we schedule ourselves
@@ -2201,6 +2219,7 @@ export class Game implements BossHost {
       phaseT: 0,
       phaseCd: 3,
       hunted: false,
+      stunT: 0,
     };
   }
 
@@ -2275,7 +2294,11 @@ export class Game implements BossHost {
     r.waveNo++;
     const def = this.sector.boss;
     const e = BossCtl.create(def, this, this.FW / 2, -def.size * 0.6);
-    const u = this.adoptUnit(e, 'boss', Math.round(def.hp * (this.hard ? 1.3 : 1)), U_BOSS);
+    // scale with the player's build: average build at this point -> base hp
+    // sqrt: a stronger build still kills faster, just not proportionally faster
+    const REF = [1.6, 2.6, 3.4];
+    const powerK = Math.sqrt(clamp(this.stats.power / REF[def.variant], 1, 3));
+    const u = this.adoptUnit(e, 'boss', Math.round(def.hp * powerK * (this.hard ? 1.3 : 1)), U_BOSS);
     if (!u) return;
     u.r = def.size * 0.3;
     u.score = 5000 * (r.sector + 1);
@@ -2291,6 +2314,7 @@ export class Game implements BossHost {
     this.fireDirT = 4;
     this.strikeT = 5;
     this.hitThisWave = false;
+    this.healBudget = this.stats.maxHp * (this.hard ? 0.2 : 0.3);
     this.sfx(def.variant === 0 ? 'stingWarden' : def.variant === 1 ? 'stingEcho' : 'stingRoot');
     this.pushLog(`breach: ${def.name.toLowerCase()}`);
     this.setPhase('playing');
@@ -2376,6 +2400,19 @@ export class Game implements BossHost {
       dmg = this.bc.filterDamage(u, dmg, x, y);
       if (dmg <= 0) {
         u.flash = 0.04;
+        return;
+      }
+      dmg = this.bc.armor(u, dmg);
+      const floor = this.bc.floor(u);
+      if (u.hp - dmg < floor) {
+        dmg = Math.max(0, u.hp - floor);
+        if (!this.bc.gateOpen()) {
+          this.bc.gated = 0.25;
+          if (Math.random() < 0.3) this.sparks(x, y, -Math.PI / 2, 1.4, 2, 80, 240, C_WHITE);
+        }
+      }
+      if (dmg <= 0) {
+        u.flash = 0.03;
         return;
       }
     }
@@ -2476,7 +2513,15 @@ export class Game implements BossHost {
     const pts = u.score * this.mult;
     this.score += pts;
     if (u.kind !== 'fragment') this.text(e.x, e.y - e.size * 0.3, `+${pts}`, C_GRAY, false);
-    if (this.stats.lifesteal > 0) this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.lifesteal);
+    if (this.stats.lifesteal > 0) this.heal(this.stats.lifesteal, 'steal');
+    if (this.stats.pulse) {
+      const before = this.empCharge;
+      this.empCharge = Math.min(this.empCost, this.empCharge + 0.07 * this.stats.pulseRecharge * (u.elite ? 2 : 1));
+      if (before < this.empCost && this.empCharge >= this.empCost) {
+        this.text(this.px, this.py - 50, 'EMP READY', C_ORANGE, true);
+        this.sfx('empReady');
+      }
+    }
     this.maybeDrop(e.x, e.y, u.elite);
     if (this.stats.cascade > 0) this.cascade(e.x, e.y, u.id);
   }
@@ -2503,7 +2548,8 @@ export class Game implements BossHost {
   private maybeDrop(x: number, y: number, elite: boolean): void {
     const chance = 0.055 * this.stats.dropRate * (elite ? 2.2 : 1) * (this.isBoss ? 0.6 : 1);
     if (Math.random() > chance) return;
-    const opts = this.stats.permOverclock ? [PK_RAPID, PK_OVERCLOCK, PK_REPAIR] : [PK_RAPID, PK_SHIELD, PK_OVERCLOCK, PK_REPAIR, PK_RAPID];
+    const opts = this.stats.permOverclock ? [PK_RAPID, PK_OVERCLOCK, PK_RAPID, PK_OVERCLOCK] : [PK_RAPID, PK_SHIELD, PK_OVERCLOCK, PK_RAPID, PK_SHIELD, PK_OVERCLOCK];
+    if (Math.random() < 0.12) opts.push(PK_REPAIR);
     this.spawnPickup(opts[(Math.random() * opts.length) | 0], x, y);
   }
 
@@ -2596,8 +2642,11 @@ export class Game implements BossHost {
 
   // ================================================================ abilities
   triggerPulse(): void {
-    if (this.phase !== 'playing' || this.dying >= 0 || !this.stats.pulse || this.pulseCdT > 0) return;
-    this.pulseCdT = this.stats.pulseCd;
+    if (this.phase !== 'playing' || this.dying >= 0 || !this.stats.pulse || this.empCharge < this.empCost) return;
+    this.empCharge -= this.empCost;
+    this.empUses++;
+    this.empCost = 1 + 0.35 * this.empUses;
+    this.empHealed = 0;
     this.pulseR = 10;
     this.pulseX = this.px;
     this.pulseY = this.py;
@@ -2606,7 +2655,7 @@ export class Game implements BossHost {
     this.hitstop = Math.max(this.hitstop, 0.05);
     this.particle(P_HEX, this.px, this.py, 140, 0, 0.4, 20, C_WHITE, 0);
     this.sfx('emp');
-    this.pushLog('firewall pulse discharged');
+    this.pushLog('emp discharged');
     if (this.stats.pulseSelfDmg > 0) this.hp = Math.max(1, this.hp - this.stats.pulseSelfDmg);
   }
 
@@ -2767,7 +2816,7 @@ export class Game implements BossHost {
           const route = this.fightBonus ? 1500 : 0;
           this.score += bonus + nohit + route;
           // sector 1 only: a small patch after each wave
-          if (sec === 0) this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * 0.12);
+          if (sec === 0) this.heal(this.stats.maxHp * 0.08, 'wave');
           const fl = FLAVOR.clear[(Math.random() * FLAVOR.clear.length) | 0];
           this.say(fl, `+${bonus + route}${nohit ? `  //  FLAWLESS +${nohit}` : ''}`, false, 2);
           this.sfx('clear');
@@ -2870,14 +2919,8 @@ export class Game implements BossHost {
 
     this.inv = Math.max(0, this.inv - dt);
     this.dashCdT = Math.max(0, this.dashCdT - dt);
-    if (this.pulseCdT > 0) {
-      this.pulseCdT -= dt;
-      if (this.pulseCdT <= 0) {
-        this.pulseCdT = 0;
-        this.text(this.px, this.py - 50, 'PULSE READY', C_ORANGE, true);
-        this.sfx('empReady');
-      }
-    }
+    if (st.pulse && this.empCharge < this.empCost && this.waveActive) this.empCharge = Math.min(this.empCost, this.empCharge + (dt / 120) * st.pulseRecharge);
+    this.lsRecent = Math.max(0, this.lsRecent - dt * 0.8);
     this.buffRapid = Math.max(0, this.buffRapid - dt);
     this.buffShield = Math.max(0, this.buffShield - dt);
     this.buffOver = Math.max(0, this.buffOver - dt);
@@ -2994,21 +3037,60 @@ export class Game implements BossHost {
     b.retarget = 0;
   }
 
+  private empHealed = 0;
+
+  /** All integrity healing goes through here: per-wave cap, boss rules, lifesteal fatigue. */
+  heal(amount: number, kind: 'steal' | 'pickup' | 'node' | 'wave' | 'emp' | 'other'): number {
+    if (amount <= 0 || this.dying >= 0) return 0;
+    if (this.isBoss && this.bc && (this.bc.inv > 0 || this.bc.entering > 0)) return 0; // no heals in transitions
+    let a = amount * (this.isBoss ? 0.5 : 1);
+    if (kind === 'steal') {
+      a /= 1 + this.lsRecent * 0.3;
+      this.lsRecent += 1;
+    }
+    if (kind !== 'node' && this.waveActive) {
+      a = Math.min(a, this.healBudget);
+      this.healBudget -= a;
+    }
+    const before = this.hp;
+    this.hp = Math.min(this.stats.maxHp, this.hp + a);
+    return this.hp - before;
+  }
+
+  /** EMP: stuns, strips shields, clears enemy shots. Small capped damage; bosses only get interrupted. */
   private updatePulse(dt: number): void {
     if (this.pulseR < 0) return;
+    const maxR = 380 * this.stats.pulseRadius;
     this.pulseR += 1100 * dt;
     const r2 = this.pulseR * this.pulseR;
-    const heal = this.syn.has('pulseLeech');
+    const siphon = this.syn.has('pulseLeech');
     for (const u of this.units) {
-      if (u.pulseHit === this.pulseSerial || !this.tangible(u)) continue;
+      if (u.pulseHit === this.pulseSerial || u.dead || u.state === U_DYING || u.delay > 0) continue;
       const ddx = u.e.x - this.pulseX;
       const ddy = u.e.y - this.pulseY;
-      if (ddx * ddx + ddy * ddy < r2) {
-        u.pulseHit = this.pulseSerial;
-        this.sparks(u.e.x, u.e.y, Math.atan2(ddy, ddx), 1.2, 4, 100, 260, C_WHITE);
-        if (heal) this.hp = Math.min(this.stats.maxHp, this.hp + 1.5);
-        if (u.state === U_LATCH && u.e.kind === 'leech') leechToggleLatch(u.e);
-        this.hitUnit(u, this.stats.pulseDmg * this.stats.dmg * (u.state === U_BOSS ? 2 : 1), false, u.e.x, u.e.y, 0);
+      if (ddx * ddx + ddy * ddy >= r2) continue;
+      u.pulseHit = this.pulseSerial;
+      this.sparks(u.e.x, u.e.y, Math.atan2(ddy, ddx), 1.2, 5, 100, 260, C_WHITE);
+      if (u.state === U_BOSS) {
+        if (this.bc) this.bc.interrupt(u.e);
+        continue;
+      }
+      u.stunT = u.elite ? this.stats.pulseStun * 0.55 : this.stats.pulseStun;
+      u.ward = 0;
+      if (u.role === 'shieldBearer' && u.dome > 0) {
+        u.dome = 0;
+        u.roleT = 6;
+        u.e.role = undefined;
+      }
+      if (u.state === U_LATCH && u.e.kind === 'leech') leechToggleLatch(u.e);
+      // small, capped, never kills elites
+      const d = Math.min(u.maxHp * 0.08, 2 + 1.5 * this.runSector());
+      u.hp = u.elite ? Math.max(1, u.hp - d) : u.hp - d;
+      u.flash = 0.08;
+      if (u.hp <= 0) this.killUnit(u, true);
+      if (siphon && this.empHealed < 6) {
+        this.empHealed++;
+        this.heal(1, 'emp');
       }
     }
     for (const b of this.ebullets) {
@@ -3020,7 +3102,7 @@ export class Game implements BossHost {
         this.particle(P_EMBER, b.x, b.y, 0, 0, 0.2, 9, C_ORANGE, 0);
       }
     }
-    if (this.pulseR > Math.max(this.FW, this.FH) * 1.2) this.pulseR = -1;
+    if (this.pulseR > maxR) this.pulseR = -1;
   }
 
   private updateBullets(dt: number): void {
@@ -3176,7 +3258,7 @@ export class Game implements BossHost {
   private collidePlayer(): void {
     if (this.dying >= 0) return;
     for (const u of this.units) {
-      if (u.state === U_LATCH || !this.tangible(u)) continue;
+      if (u.state === U_LATCH || u.stunT > 0 || !this.tangible(u)) continue;
       const e = u.e;
       const rr = u.r * (u.state === U_BOSS ? 0.8 : 0.85) + 10;
       const ddx = e.x - this.px;
@@ -3235,7 +3317,7 @@ export class Game implements BossHost {
         label = 'OVERCLOCK ENGAGED';
         break;
       case PK_REPAIR:
-        this.hp = Math.min(this.stats.maxHp, this.hp + 12);
+        this.heal(8, 'pickup');
         label = '+12 INTEGRITY';
         break;
     }

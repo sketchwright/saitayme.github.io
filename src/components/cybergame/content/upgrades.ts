@@ -24,10 +24,18 @@ export interface Stats {
   chainDmg: number; // fraction of hit damage
   drones: number;
   droneRate: number;
+  /** EMP pulse: stuns, strips shields, clears shots. Recharges from kills. */
   pulse: boolean;
-  pulseCd: number;
-  pulseDmg: number;
+  pulseStun: number; // seconds
+  pulseRadius: number; // multiplier on the base radius
+  pulseRecharge: number; // multiplier on charge gained per kill
   pulseSelfDmg: number;
+  /** additive same-category bonuses (summed, then applied once) */
+  dmgAdd: number;
+  rateAdd: number;
+  /** estimated DPS multiplier vs the starting kit: raw and after the soft cap */
+  rawPower: number;
+  power: number;
   lifesteal: number; // integrity per kill
   shieldMax: number;
   shieldRegen: number; // per s
@@ -64,9 +72,14 @@ export const baseStats = (): Stats => ({
   drones: 0,
   droneRate: 2.6,
   pulse: false,
-  pulseCd: 20,
-  pulseDmg: 6,
+  pulseStun: 2.2,
+  pulseRadius: 1,
+  pulseRecharge: 1,
   pulseSelfDmg: 0,
+  dmgAdd: 0,
+  rateAdd: 0,
+  rawPower: 1,
+  power: 1,
   lifesteal: 0,
   shieldMax: 0,
   shieldRegen: 0,
@@ -131,10 +144,10 @@ const I = {
 
 export const UPGRADES: UpgradeDef[] = [
   // ------------------------------------------------------------ common
-  { id: 'rate', name: 'OVERCLOCKED CYCLES', rarity: 'common', maxStacks: 3, desc: 'Fire rate +15%.', icon: I.rate, apply: (s) => { s.fireRate *= 1.15; } },
-  { id: 'dmg', name: 'HARDENED PACKETS', rarity: 'common', maxStacks: 3, desc: 'Bullet damage +18%.', icon: I.dmg, apply: (s) => { s.dmg *= 1.18; } },
+  { id: 'rate', name: 'OVERCLOCKED CYCLES', rarity: 'common', maxStacks: 3, desc: 'Fire rate +15% (additive).', icon: I.rate, apply: (s) => { s.rateAdd += 0.15; } },
+  { id: 'dmg', name: 'HARDENED PACKETS', rarity: 'common', maxStacks: 3, desc: 'Bullet damage +18% (additive).', icon: I.dmg, apply: (s) => { s.dmgAdd += 0.18; } },
   { id: 'velocity', name: 'VELOCITY PATCH', rarity: 'common', maxStacks: 3, desc: 'Bullet speed +25%, accuracy up.', icon: I.speed, apply: (s) => { s.bulletSpeed *= 1.25; s.inaccuracy *= 0.6; } },
-  { id: 'size', name: 'PAYLOAD EXPANSION', rarity: 'common', maxStacks: 3, desc: 'Bullets 35% larger (wider hitbox), damage +8%.', icon: I.size, apply: (s) => { s.bulletSize *= 1.35; s.dmg *= 1.08; } },
+  { id: 'size', name: 'PAYLOAD EXPANSION', rarity: 'common', maxStacks: 3, desc: 'Bullets 35% larger (wider hitbox), damage +8%.', icon: I.size, apply: (s) => { s.bulletSize *= 1.35; s.dmgAdd += 0.08; } },
   { id: 'hp', name: 'INTEGRITY BUFFER', rarity: 'common', maxStacks: 3, desc: 'Max integrity +20. Restores 20.', icon: I.hp, apply: (s) => { s.maxHp += 20; } },
   { id: 'shield', name: 'SHIELD MATRIX', rarity: 'common', maxStacks: 3, desc: '+20 regenerating shield.', icon: I.shield, apply: (s) => { s.shieldMax += 20; s.shieldRegen += 4; } },
   { id: 'magnet', name: 'SIGNAL MAGNET', rarity: 'common', maxStacks: 3, desc: 'Pickup pull radius +90. Drops +15%.', icon: I.magnet, apply: (s) => { s.magnet += 90; s.dropRate *= 1.15; } },
@@ -142,25 +155,25 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'combo', name: 'CHAIN MEMORY', rarity: 'common', maxStacks: 3, desc: 'Combo multiplier cap +2, chain window +0.8 s.', icon: I.combo, apply: (s) => { s.comboCap += 2; s.comboTime += 0.8; } },
   { id: 'crit', name: 'CRIT HEURISTICS', rarity: 'common', maxStacks: 3, desc: 'Critical chance +10%.', icon: I.crit, apply: (s) => { s.crit += 0.1; } },
   // ------------------------------------------------------------ rare
-  { id: 'spread', name: 'SPREAD PROTOCOL', rarity: 'rare', maxStacks: 3, unlock: 3, desc: '+2 bullets in a fan. Damage per bullet -10%.', icon: I.spread, apply: (s) => { s.spread += 2; s.dmg *= 0.9; } },
+  { id: 'spread', name: 'SPREAD PROTOCOL', rarity: 'rare', maxStacks: 3, unlock: 3, desc: '+2 bullets in a fan. Damage per bullet -10%.', icon: I.spread, apply: (s) => { s.spread += 2; s.dmgAdd -= 0.1; } },
   { id: 'pierce', name: 'PIERCING ROUNDS', rarity: 'rare', maxStacks: 3, unlock: 3, desc: 'Bullets pass through +1 target.', icon: I.pierce, apply: (s) => { s.pierce += 1; } },
   { id: 'homing', name: 'HOMING PACKETS', rarity: 'rare', maxStacks: 2, unlock: 2, desc: 'Bullets curve toward the nearest threat.', icon: I.homing, apply: (s) => { s.homing += 5; } },
   { id: 'drone', name: 'DEFENDER DRONES', rarity: 'rare', maxStacks: 3, unlock: 3, desc: '+1 orbiting drone that fires with you.', icon: I.drone, apply: (s) => { s.drones += 1; } },
   { id: 'chain', name: 'CHAIN LIGHTNING', rarity: 'rare', maxStacks: 3, unlock: 3, desc: 'Hits arc to +1 nearby enemy for 55% damage.', icon: I.chain, apply: (s) => { s.chain += 1; } },
-  { id: 'pulse', name: 'FIREWALL PULSE', rarity: 'rare', maxStacks: 3, unlock: 2, desc: 'Screen-clearing pulse [E / right click]. Stacks cut cooldown 25%.', icon: I.pulse, apply: (s) => { if (s.pulse) s.pulseCd *= 0.75; s.pulse = true; s.pulseDmg += 2; } },
+  { id: 'pulse', name: 'EMP PULSE', rarity: 'rare', maxStacks: 3, unlock: 2, desc: 'EMP [E / right click]: stuns enemies ~2 s, strips shields, clears shots. Charges from kills. Stacks: +radius, +stun, faster charge.', icon: I.pulse, apply: (s) => { if (s.pulse) { s.pulseRadius += 0.25; s.pulseStun += 0.3; s.pulseRecharge += 0.3; } s.pulse = true; } },
   { id: 'lifesteal', name: 'LIFESTEAL DAEMON', rarity: 'rare', maxStacks: 3, desc: 'Each kill restores 0.5 integrity.', icon: I.life, apply: (s) => { s.lifesteal += 0.5; } },
   { id: 'dash', name: 'PHASE DASH', rarity: 'rare', maxStacks: 2, unlock: 1, desc: 'Dash with i-frames [SHIFT]. Shakes off leeches.', icon: I.dash, apply: (s) => { if (s.dash) s.dashCd *= 0.7; s.dash = true; } },
   { id: 'buff', name: 'OVERCLOCK EXTENDER', rarity: 'rare', maxStacks: 2, desc: 'Timed pickups last 50% longer, drop 30% more.', icon: I.clock, apply: (s) => { s.buffDur *= 1.5; s.dropRate *= 1.3; } },
   { id: 'cascade', name: 'KILL CASCADE', rarity: 'rare', maxStacks: 2, unlock: 4, desc: 'Destroyed enemies detonate, damaging neighbours.', icon: I.cascade, apply: (s) => { s.cascade += 1.6; } },
   { id: 'regen', name: 'ADAPTIVE SHIELD', rarity: 'rare', maxStacks: 2, desc: '+15 shield. Regen 2x faster, starts sooner.', icon: I.regen, apply: (s) => { s.shieldMax += 15; s.shieldRegen = (s.shieldRegen + 4) * 2; s.shieldDelay *= 0.55; } },
   // ------------------------------------------------------------ corrupted
-  { id: 'glass', name: 'GLASS KERNEL', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Damage +65%.', drawback: 'Max integrity -35.', icon: I.glass, apply: (s) => { s.dmg *= 1.65; s.maxHp -= 35; } },
-  { id: 'berserk', name: 'BERSERK LOOP', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Fire rate +60%.', drawback: 'Aim scatters wildly.', icon: I.berserk, apply: (s) => { s.fireRate *= 1.6; s.inaccuracy += 0.14; } },
+  { id: 'glass', name: 'GLASS KERNEL', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Damage +50% (additive).', drawback: 'Max integrity -35.', icon: I.glass, apply: (s) => { s.dmgAdd += 0.5; s.maxHp -= 35; } },
+  { id: 'berserk', name: 'BERSERK LOOP', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Fire rate +45% (additive).', drawback: 'Aim scatters wildly.', icon: I.berserk, apply: (s) => { s.rateAdd += 0.45; s.inaccuracy += 0.14; } },
   { id: 'unstable', name: 'UNSTABLE CORE', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Crit chance +25%, crits deal 3x.', drawback: 'You take 35% more damage.', icon: I.unstable, apply: (s) => { s.crit += 0.25; s.critMult = 3; s.dmgTaken *= 1.35; } },
   { id: 'vamp', name: 'VAMPIRIC THREAD', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Kills restore 1.6 integrity.', drawback: 'Integrity decays 0.7/s in combat.', icon: I.vamp, apply: (s) => { s.lifesteal += 1.6; s.hpDecay += 0.7; } },
-  { id: 'overmind', name: 'SWARM OVERMIND', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: '+2 drones that fire 40% faster.', drawback: 'Main gun fire rate -30%.', icon: I.swarm, apply: (s) => { s.drones += 2; s.droneRate *= 1.4; s.fireRate *= 0.7; } },
-  { id: 'addict', name: 'OVERCLOCK ADDICTION', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Permanent overclock: +30% fire rate, damage, speed.', drawback: 'Shields disabled; no shield pickups.', icon: I.addict, apply: (s) => { s.permOverclock = true; s.fireRate *= 1.3; s.dmg *= 1.3; s.moveSpeed *= 1.15; } },
-  { id: 'feedback', name: 'FEEDBACK PULSE', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Grants Firewall Pulse; cooldown halved, damage doubled.', drawback: 'Each pulse costs 8 integrity.', icon: I.feedback, apply: (s) => { s.pulse = true; s.pulseCd *= 0.5; s.pulseDmg *= 2; s.pulseSelfDmg += 8; } },
+  { id: 'overmind', name: 'SWARM OVERMIND', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: '+2 drones that fire 40% faster.', drawback: 'Main gun fire rate -30%.', icon: I.swarm, apply: (s) => { s.drones += 2; s.droneRate *= 1.4; s.rateAdd -= 0.3; } },
+  { id: 'addict', name: 'OVERCLOCK ADDICTION', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Permanent overclock: +25% fire rate and damage, +15% speed.', drawback: 'Shields disabled; no shield pickups.', icon: I.addict, apply: (s) => { s.permOverclock = true; s.rateAdd += 0.25; s.dmgAdd += 0.25; s.moveSpeed *= 1.15; } },
+  { id: 'feedback', name: 'OVERCHARGED EMP', rarity: 'corrupted', maxStacks: 1, unlock: 4, desc: 'Grants the EMP; charges 60% faster and stuns 0.6 s longer.', drawback: 'Each EMP costs 8 integrity.', icon: I.feedback, apply: (s) => { s.pulse = true; s.pulseRecharge += 0.6; s.pulseStun += 0.6; s.pulseSelfDmg += 8; } },
 ];
 
 export const UPGRADE_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map((u) => [u.id, u]));
@@ -176,7 +189,7 @@ export const SYNERGIES: SynergyDef[] = [
   { id: 'arcPierce', name: 'ARC CASCADE', requires: [['pierce'], ['chain']], desc: 'Every pierced enemy emits its own arc; arcs jump +1.' },
   { id: 'seekerSwarm', name: 'SEEKER SWARM', requires: [['homing'], ['spread']], desc: 'Spread fans wider, +1 bullet, and hunts harder.' },
   { id: 'droneCrit', name: 'TARGETING LINK', requires: [['drone', 'overmind'], ['crit', 'unstable']], desc: 'Drones can crit; drone crits arc lightning.' },
-  { id: 'pulseLeech', name: 'PURGE FEEDBACK', requires: [['pulse', 'feedback'], ['lifesteal', 'vamp']], desc: 'Pulse heals 1.5 per enemy it touches.' },
+  { id: 'pulseLeech', name: 'STATIC SIPHON', requires: [['pulse', 'feedback'], ['lifesteal', 'vamp']], desc: 'Each EMP restores 1 integrity per enemy stunned (max 6).' },
   { id: 'cascadeArc', name: 'STORM CORE', requires: [['cascade'], ['chain']], desc: 'Kill detonations throw lightning arcs.' },
   { id: 'dashShield', name: 'PHASE BARRIER', requires: [['dash'], ['shield', 'regen']], desc: 'Dashing restores 15 shield and leaves a damaging wake.' },
 ];
@@ -202,8 +215,17 @@ export const computeStats = (owned: ReadonlyMap<string, number>, syn: ReadonlySe
     s.homing *= 1.6;
   }
   if (syn.has('arcPierce')) s.chain += 1;
-  // late-game power comes from synergies: each active one is a flat damage boost
-  s.dmg *= 1 + 0.12 * syn.size;
+  // late-game power comes from synergies (additive like everything else)
+  s.dmgAdd += 0.08 * syn.size;
+  const base = baseStats();
+  // same-category bonuses add; fire rate is capped at 2x the starting kit
+  s.dmg = base.dmg * Math.max(0.3, 1 + s.dmgAdd);
+  s.fireRate = clampN(base.fireRate * Math.max(0.4, 1 + s.rateAdd), base.fireRate * 0.4, base.fireRate * 2);
+  // diminishing returns on the whole build: estimate DPS vs the starting kit,
+  // soft-cap it and fold the difference back into per-hit damage
+  s.rawPower = estimatePower(s) / estimatePower(base);
+  s.power = softCap(s.rawPower);
+  s.dmg *= s.power / s.rawPower;
   if (s.permOverclock) {
     s.shieldMax = 0;
     s.shieldRegen = 0;
@@ -211,6 +233,27 @@ export const computeStats = (owned: ReadonlyMap<string, number>, syn: ReadonlySe
   s.maxHp = Math.max(30, s.maxHp);
   return s;
 };
+
+const clampN = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+
+/**
+ * Rough single-target DPS factor of a build. The soft cap works on this, so
+ * crowd tools (pierce, chain, cascade, wide fans) stay strong against waves
+ * without inflating boss damage.
+ */
+export const estimatePower = (s: Stats): number =>
+  s.dmg *
+  s.fireRate *
+  (1 + 0.3 * s.spread) *
+  (1 + (0.6 * s.drones * s.droneRate) / Math.max(1, s.fireRate)) *
+  (1 + s.crit * (s.critMult - 1)) *
+  (s.homing > 0 ? 1.05 : 1);
+
+/** Linear up to 1.5x, then flattens toward ~4.7x the starting kit. */
+export const softCap = (p: number): number => (p <= 1.5 ? p : 1.5 + 3.2 * (1 - Math.exp(-(p - 1.5) / 5)));
+
+/** Expected (budget) power at the end of each sector, for tuning reports. */
+export const POWER_BUDGET = [1.7, 2.8, 3.8];
 
 export const RARITY_WEIGHT: Record<Rarity, number> = { common: 62, rare: 30, corrupted: 8 };
 export const RARITY_LABEL: Record<Rarity, string> = { common: 'COMMON', rare: 'RARE', corrupted: 'CORRUPTED' };

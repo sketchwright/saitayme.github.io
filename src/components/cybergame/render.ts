@@ -549,6 +549,19 @@ export class Renderer {
         c.lineTo(e.x + Math.cos(u.tellA) * (80 + f * 320), e.y + Math.sin(u.tellA) * (80 + f * 320));
         c.stroke();
       }
+      if (u.stunT > 0) {
+        // EMP stun: jagged white ring
+        c.strokeStyle = `rgba(244,239,232,${(0.45 + 0.4 * Math.random()).toFixed(2)})`;
+        c.lineWidth = 1;
+        c.beginPath();
+        for (let k = 0; k <= 12; k++) {
+          const a = (k / 12) * TAU + g.time * 3;
+          const rr = u.r + 6 + (k % 2 ? 3 : -2);
+          if (k === 0) c.moveTo(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr);
+          else c.lineTo(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr);
+        }
+        c.stroke();
+      }
       if (u.role === 'sniper' || u.role === 'suppressor') {
         if (u.pt === 1) {
           // fire-line tell: the locked line it is about to fire along
@@ -1527,6 +1540,16 @@ export class Renderer {
       // phase ticks
       c.fillStyle = WHITE;
       for (const p of [0.66, 0.33]) c.fillRect(cx - w / 2 + w * p - 1, y + 3, 2, 11);
+      // phase gate: damage is held at the threshold until the pattern has run
+      if (bc.gated > 0) this.label('PHASE SHIELD // SURVIVE THE PATTERN', cx, y + 26, 'center', WHITE, 8);
+      // Warden shield segments still standing
+      if (bc.variant === 0 && bc.phase < 2) {
+        const n = bc.shields.length;
+        for (let i = 0; i < n; i++) {
+          c.fillStyle = bc.shields[i] > 0 ? WHITE : 'rgba(244,239,232,0.15)';
+          c.fillRect(cx - (n * 10) / 2 + i * 10, y + 14, 7, 3);
+        }
+      }
     } else if (g.waveActive) {
       let alive = 0;
       for (const u of g.units) if (!u.dead) alive++;
@@ -1608,7 +1631,7 @@ export class Renderer {
     if (g.stats.permOverclock) this.label('OVERCLOCK // PERMANENT', L + 8, yb, 'left', CORE, 9);
 
     // ability buttons (also touch targets)
-    if (st.pulse) this.abilityBtn(g.btnPulse.x, g.btnPulse.y, g.btnPulse.r, 'PULSE', 1 - g.pulseCdT / st.pulseCd, small ? '' : 'E / RMB', g.time);
+    if (st.pulse) this.abilityBtn(g.btnPulse.x, g.btnPulse.y, g.btnPulse.r, 'EMP', g.empCharge / g.empCost, small ? '' : 'E / RMB', g.time);
     if (st.dash) this.abilityBtn(g.btnDash.x, g.btnDash.y, g.btnDash.r, 'DASH', 1 - g.dashCdT / st.dashCd, small ? '' : 'SHIFT', g.time);
 
     // wide-screen side panels: terminal log + build
