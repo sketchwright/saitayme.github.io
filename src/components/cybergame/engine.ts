@@ -1,23 +1,24 @@
 // Cyber Defender simulation: vertical arcade roguelite. Plain mutable state in
 // fixed pools; React only hears about screen changes. World space is the
 // logical playfield (FIELD_W wide, FH tall), scaled to the canvas by the
-// renderer. Enemies come from ./enemies (motion + animation); this file owns
-// formations, dives, combat, upgrades, the node map and the run structure.
-import * as EN from './enemies';
+// renderer. Enemies come from ./enemies (motion + animation, always driven by
+// smooth intent velocities, never by setting positions); this file owns
+// spawning, type behaviours, combat, upgrades, routes and the run structure.
 import {
   Boss,
   Enemy,
   EnemyKind,
   Vec,
-  beginSplit,
   bossCharge,
   createEnemy,
-  crawlerLunge,
+  hurtEnemy,
+  killEnemy,
   leechIsLatched,
   leechToggleLatch,
   sentinelCharge,
   sentinelMuzzle,
   setBossPhase,
+  spawnEnemy,
   turnToward,
   updateEnemy,
   wraithStrike,
@@ -37,7 +38,6 @@ import {
   FIELD_W,
   FloatText,
   MAX_UNITS,
-  MapNode,
   NodeType,
   OfferSource,
   OwnedUpgrade,
@@ -62,20 +62,19 @@ import {
   Phase,
   Pickup,
   RunSummary,
-  SectorMap,
   SfxName,
   TAU,
+  TELL_TIME,
+  U_ACT,
   U_BOSS,
-  U_DIVE,
+  U_DYING,
   U_ENTER,
-  U_FORM,
   U_FREE,
-  U_GHOST,
+  U_HUNT,
   U_LATCH,
-  U_RETURN,
-  U_SEEK,
-  U_SPLIT,
-  U_TELL,
+  U_RETREAT,
+  U_STRIKE,
+  U_SWOOP,
   Unit,
 } from './types';
 import { Rng, deriveSeed, randomSeed, seedToString } from './rng';
@@ -91,8 +90,8 @@ import {
   computeStats,
   computeSynergies,
 } from './content/upgrades';
-import { BossAttack, BossDef, EntryPattern, FLAVOR, KIND_STATS, RowDef, SECTORS, SectorDef } from './content/sectors';
-import { generateSectorMap } from './content/nodemap';
+import { BossAttack, BossDef, FLAVOR, GroupDef, KIND_STATS, SECTORS, SectorDef } from './content/sectors';
+import { generateRoutes } from './content/routes';
 import { ANOMALIES, AnomalyCtx, AnomalyDef } from './content/anomalies';
 
 export interface GameEvents {
@@ -110,19 +109,18 @@ const bez = (t: number, a: number, b: number, c: number, d: number) => {
   return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
 };
 
-// Optional hurt / kill hooks the enemy module may export later.
-type HookFn = (e: Enemy, ...args: number[]) => void;
-const LIB = EN as unknown as Record<string, unknown>;
-const hurtHook: HookFn | null = typeof LIB.hurtEnemy === 'function' ? (LIB.hurtEnemy as HookFn) : null;
-const killHook: HookFn | null = typeof LIB.killEnemy === 'function' ? (LIB.killEnemy as HookFn) : null;
+/** Fraction of the field height the player may use (lower part). */
+export const PLAYER_ZONE = 0.6;
 
 export interface RunState {
   seed: number;
   seedStr: string;
   sector: number;
-  maps: SectorMap[];
-  current: MapNode | null;
-  combatInSector: number;
+  /** waves cleared in the current sector */
+  waveInSector: number;
+  routes: NodeType[];
+  /** what starts once the current detour (cache / anomaly) is resolved */
+  pending: 'wave' | 'boss';
   wavesCleared: number;
   waveNo: number;
   kills: number;
@@ -130,7 +128,7 @@ export interface RunState {
   time: number;
   offers: UpgradeDef[];
   offerSource: OfferSource;
-  afterPick: 'map' | 'nextSector' | 'victory';
+  afterPick: 'routes' | 'pending' | 'nextSector' | 'victory';
   anomaly: AnomalyDef | null;
   usedAnomalies: string[];
   toast: string;
@@ -159,6 +157,8 @@ interface BossState {
   reachNext: number;
   dying: number;
   spin: number;
+  /** tell before an attack: core brightens, aim line for aimed attacks */
+  windup: number;
 }
 
 const tmpV: Vec = { x: 0, y: 0 };
@@ -237,14 +237,17 @@ export class Game {
   boss: Unit | null = null;
   bs: BossState | null = null;
   sector: SectorDef = SECTORS[0];
-  private diveT = 3;
   private fireDirT = 2;
-  formDx = 56;
-  formDy = 46;
-  formTop = 110;
-  private swayAmp = 40;
-  formT = 0;
+  private strikeT = 4;
+  private groups: GroupDef[] = [];
+  private groupIdx = 0;
+  private waveClock = 0;
+  private clusterSeq = 0;
+  private fightBonus = false;
   latchedCount = 0;
+  /** dev-only slow motion (backquote) */
+  debug = false;
+  timeScale = 1;
 
   // fx
   shake = 0;
@@ -305,7 +308,7 @@ export class Game {
     this.scale = Math.max(0.3, Math.min(W / FIELD_W, H / FIELD_MIN_H));
     this.FH = H / this.scale;
     this.fx0 = (W - FIELD_W * this.scale) / 2;
-    this.py = clamp(this.py, this.FH - 230, this.FH - 40);
+    this.py = clamp(this.py, this.FH * (1 - PLAYER_ZONE), this.FH - 40);
     const r = 30;
     this.btnPulse = { x: W - 24 - r, y: H - 30 - r, r };
     this.btnDash = { x: W - 24 - r, y: H - 30 - r * 2 - 26 - 26, r: 26 };
@@ -414,6 +417,12 @@ export class Game {
       case 'KeyL':
         if (!repeat) this.triggerDash();
         break;
+      case 'Backquote':
+        if (this.debug && !repeat) {
+          this.timeScale = this.timeScale < 1 ? 1 : 0.2;
+          this.pushLog(`debug: time x${this.timeScale}`);
+        }
+        break;
       default:
         return false;
     }
@@ -483,9 +492,9 @@ export class Game {
       seed: s,
       seedStr: seedToString(s),
       sector: 0,
-      maps: [],
-      current: null,
-      combatInSector: 0,
+      waveInSector: 0,
+      routes: [],
+      pending: 'wave',
       wavesCleared: 0,
       waveNo: 0,
       kills: 0,
@@ -493,7 +502,7 @@ export class Game {
       time: 0,
       offers: [],
       offerSource: 'wave',
-      afterPick: 'map',
+      afterPick: 'routes',
       anomaly: null,
       usedAnomalies: [],
       toast: '',
@@ -505,7 +514,6 @@ export class Game {
       victory: false,
       lastSynergy: '',
     };
-    for (let i = 0; i < SECTORS.length; i++) this.run.maps.push(generateSectorMap(this.run.mapRng, i));
     this.owned = new Map();
     this.syn = new Set();
     this.stats = computeStats(this.owned, this.syn);
@@ -523,9 +531,9 @@ export class Game {
     this.log = [];
     this.pushLog('antivirus mind linked');
     this.pushLog(`seed ${this.run.seedStr}`);
-    this.say(FLAVOR.runStart[0], `SECTOR 1 // ${this.sector.name}`, false, 2.6);
     this.ev.sound('sector');
-    this.setPhase('map');
+    this.beginWave(false, false);
+    this.say(FLAVOR.runStart[0], `SECTOR 1 // ${this.sector.name} // WAVE 1`, false, 2.6);
     this.ev.changed();
   }
 
@@ -550,56 +558,61 @@ export class Game {
     this.latchedCount = 0;
   }
 
-  /** Map nodes the player may pick right now. */
-  reachable(): string[] {
+  private makeRoutes(): void {
     const r = this.run;
-    if (!r) return [];
-    const map = r.maps[r.sector];
-    if (!r.current) return map.rows[0].map((n) => n.id);
-    return r.current.next;
+    if (!r) return;
+    const waves = this.sector.waves.length;
+    r.routes = generateRoutes(r.mapRng, r.sector, r.waveInSector + 1, this.hp / this.stats.maxHp, r.waveInSector >= waves);
+    this.setPhase('map');
+    this.ev.changed();
   }
 
-  private findNode(id: string): MapNode | null {
+  /** Starts whatever the route led to (a wave or the boss). */
+  private continuePending(): void {
     const r = this.run;
-    if (!r) return null;
-    const map = r.maps[r.sector];
-    if (map.boss.id === id) return map.boss;
-    for (const row of map.rows) for (const n of row) if (n.id === id) return n;
-    return null;
+    if (!r) return;
+    if (r.pending === 'boss') this.beginBoss();
+    else {
+      this.beginWave(r.hardenNext, false);
+      r.hardenNext = false;
+    }
+    this.ev.changed();
   }
 
-  chooseNode(id: string): void {
+  chooseRoute(index: number): void {
     const r = this.run;
     if (!r || this.phase !== 'map') return;
-    if (!this.reachable().includes(id)) return;
-    const node = this.findNode(id);
-    if (!node) return;
-    node.visited = true;
-    r.current = node;
+    const t = r.routes[index];
+    if (!t) return;
     r.toast = '';
     this.sfx('click');
-    const t: NodeType = node.type;
+    const bossStep = r.waveInSector >= this.sector.waves.length;
+    r.pending = bossStep ? 'boss' : 'wave';
     switch (t) {
       case 'fight':
+        this.beginWave(r.hardenNext, true);
+        r.hardenNext = false;
+        break;
       case 'elite':
-        this.beginWave(t === 'elite' || r.hardenNext);
+        this.beginWave(true, false);
         r.hardenNext = false;
         break;
       case 'boss':
+        this.score += 3000;
         this.beginBoss();
         break;
       case 'repair': {
-        const heal = Math.round(this.stats.maxHp * 0.4);
         const before = this.hp;
-        this.hp = Math.min(this.stats.maxHp, this.hp + heal);
+        this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * 0.4);
         this.shield = this.stats.shieldMax;
-        r.toast = `REPAIR COMPLETE // +${Math.round(this.hp - before)} INTEGRITY`;
-        this.pushLog('integrity patched');
+        this.pushLog(`integrity patched +${Math.round(this.hp - before)}`);
         this.sfx('pickup');
-        this.ev.changed();
+        this.continuePending();
+        this.say('REPAIR COMPLETE', `+${Math.round(this.hp - before)} INTEGRITY`, false, 2);
         break;
       }
       case 'cache':
+        r.afterPick = 'pending';
         this.openOffer('cache');
         break;
       case 'anomaly': {
@@ -634,6 +647,7 @@ export class Game {
         },
         offer: (rar) => {
           offered = true;
+          r.afterPick = 'pending';
           this.openOffer('anomaly', rar);
         },
         addScore: (n) => {
@@ -670,10 +684,7 @@ export class Game {
       r.toast = 'ANOMALY IGNORED';
       this.sfx('click');
     }
-    if (!offered) {
-      r.afterPick = 'map';
-      this.setPhase('map');
-    }
+    if (!offered) this.continuePending();
     this.ev.changed();
   }
 
@@ -766,23 +777,26 @@ export class Game {
     if (!r) return;
     r.offers = [];
     const next = r.afterPick;
-    r.afterPick = 'map';
+    r.afterPick = 'routes';
     if (next === 'victory') {
       this.endRun(true);
       return;
     }
     if (next === 'nextSector') {
       r.sector++;
-      r.current = null;
-      r.combatInSector = 0;
+      r.waveInSector = 0;
       this.sector = SECTORS[r.sector];
       this.theme = this.sector.theme;
-      this.say(`SECTOR ${r.sector + 1} // ${this.sector.name}`, this.sector.subtitle, false, 3);
       this.pushLog(`descending: ${this.sector.name.toLowerCase()}`);
       this.ev.sound('sector');
+      this.makeRoutes();
+      return;
     }
-    this.setPhase('map');
-    this.ev.changed();
+    if (next === 'pending') {
+      this.continuePending();
+      return;
+    }
+    this.makeRoutes();
   }
 
   summary(): RunSummary {
@@ -923,31 +937,40 @@ export class Game {
     if (this.units.length >= MAX_UNITS) return null;
     const ks = KIND_STATS[kind];
     const size = sizeOverride ?? ks.size * (elite ? 1.12 : 1);
+    // always a fresh entity: entities are never reused
     const e = createEnemy(kind, x, y, (Math.random() * 0x7fffffff) | 0, { size });
     if (e.kind === 'leech') e.auto = false;
-    const hpMul = this.sector.hpMul * (elite ? 1.6 : 1);
+    const hpMul = this.sector.hpMul * (elite ? 1.4 : 1);
     const hp = Math.max(1, Math.round(ks.hp * hpMul));
     const u: Unit = {
       id: this.nextId++,
       e,
       kind,
       state: U_ENTER,
+      from: 'top',
       hp,
       maxHp: hp,
       r: ks.r * (elite ? 1.1 : 1),
-      col: 0,
-      row: 0,
-      hasSlot: false,
+      gx: x,
+      gy: y,
+      baseX: x,
       p0x: x, p0y: y, p1x: x, p1y: y, p2x: x, p2y: y, p3x: x, p3y: y,
       pt: 0,
       pdur: 1,
-      toSlot: false,
       delay: 0,
-      side: 1,
       t: 0,
       stateT: 0,
-      shots: 0,
-      shotT: 0,
+      actT: rand(2, 5),
+      shotT: rand(3, 6),
+      tellT: 0,
+      tellA: 0,
+      tellKind: EB_PELLET,
+      tellN: 1,
+      tellSpread: 0,
+      tellSpeed: 0,
+      cluster: 0,
+      cidx: 0,
+      side: 1,
       flash: 0,
       elite,
       score: Math.round(ks.score * (elite ? 1.6 : 1) * (1 + this.runSector() * 0.3)),
@@ -964,405 +987,434 @@ export class Game {
     return this.run ? this.run.sector : 0;
   }
 
-  slotX(u: Unit): number {
-    const breath = 1 + 0.05 * Math.sin(this.formT * 1.1);
-    return this.FW / 2 + u.col * this.formDx * breath + Math.sin(this.formT * 0.42) * this.swayAmp;
+  private onScreen(e: Enemy, m: number): boolean {
+    return e.x >= m && e.x <= this.FW - m && e.y >= m && e.y <= this.FH - m;
   }
 
-  slotY(u: Unit): number {
-    return this.formTop + u.row * this.formDy + Math.sin(this.formT * 1.1 + u.col * 0.4) * 3;
+  /** Fully materialised and not phased out: allowed to shoot. */
+  private visibleForFire(u: Unit): boolean {
+    const e = u.e;
+    if (u.dead || u.state === U_DYING || u.delay > 0 || !e.alive || e.spawnT < 1) return false;
+    if (e.kind === 'wraith' && (e.vis < 0.9 || e.mode !== 0)) return false;
+    return this.onScreen(e, 14);
   }
 
-  private setPath(u: Unit, x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, dur: number, toSlot: boolean): void {
-    u.p0x = x0;
-    u.p0y = y0;
-    u.p1x = x1;
-    u.p1y = y1;
-    u.p2x = x2;
-    u.p2y = y2;
-    u.p3x = x3;
-    u.p3y = y3;
-    u.pt = 0;
-    u.pdur = dur;
-    u.toSlot = toSlot;
+  /** Smooth, speed-capped intent toward a goal (slows on arrival). */
+  private goal(u: Unit, gx: number, gy: number, speed: number): Vec {
+    const dx = gx - u.e.x;
+    const dy = gy - u.e.y;
+    const d = Math.hypot(dx, dy) || 1;
+    const v = Math.min(speed, d * 1.4);
+    intentV.x = (dx / d) * v;
+    intentV.y = (dy / d) * v;
+    return intentV;
   }
 
-  private entryPath(u: Unit, pat: EntryPattern, s: number): void {
-    const cx = this.FW / 2;
+  private stationFor(side: number): [number, number] {
+    if (Math.random() < 0.6) return [side < 0 ? rand(40, 70) : this.FW - rand(40, 70), rand(110, this.FH * 0.36)];
+    return [rand(80, this.FW - 80), rand(70, 140)];
+  }
+
+  /** Spawns one group; returns how many units were created. */
+  private spawnGroup(g: GroupDef, elite: boolean, bx = 0, by = 0): number {
     const FW = this.FW;
     const FH = this.FH;
-    switch (pat) {
-      case 'sweep':
-        this.setPath(u, cx + s * (FW / 2 + 60), FH * 0.6, cx - s * FW * 0.05, FH * 0.8, cx - s * FW * 0.42, FH * 0.12, 0, 0, 2.6, true);
-        break;
-      case 'dive':
-        this.setPath(u, cx + s * FW * 0.22, -60, cx + s * FW * 0.22, FH * 0.72, cx - s * FW * 0.38, FH * 0.6, 0, 0, 2.6, true);
-        break;
-      case 'arc':
-        this.setPath(u, cx + s * (FW / 2 + 60), 100, cx - s * FW * 0.1, 20, cx - s * FW * 0.28, FH * 0.55, 0, 0, 2.4, true);
-        break;
-      case 'snake':
-        this.setPath(u, cx - s * FW * 0.1, -60, cx + s * FW * 0.65, FH * 0.36, cx - s * FW * 0.65, FH * 0.5, 0, 0, 2.8, true);
-        break;
-    }
-  }
-
-  private beginWave(elite: boolean): void {
-    const r = this.run;
-    if (!r) return;
-    this.resetCombat();
-    const sec = this.sector;
-    const idx = Math.min(sec.waves.length - 1, r.combatInSector);
-    r.combatInSector++;
-    r.waveNo++;
-    const tmpl = sec.waves[idx];
-    const rows = elite ? [sec.eliteExtra, ...tmpl.rows] : tmpl.rows.slice();
-    const rng = new Rng(deriveSeed(r.seed, 1000 + r.sector * 64 + (r.current ? r.current.row : 0)));
-    let maxCols = 0;
-    for (const row of rows) maxCols = Math.max(maxCols, row.cols);
-    this.formDx = Math.min(58, (this.FW - 70) / Math.max(1, maxCols));
-    this.formDy = rows.length > 4 ? 40 : 46;
-    this.formTop = 104;
-    this.swayAmp = clamp((this.FW - maxCols * this.formDx) / 2 - 12, 0, 46);
-    this.formT = 0;
-    this.batchRows = rows;
-    this.batchEntries = tmpl.entries;
-    this.batchRng = rng;
-    this.batchesLeft = (idx >= 2 ? 2 : 1) + (elite ? 1 : 0);
-    this.waveClock = 0;
-    this.waveTotal = 0;
-    const total = this.spawnBatch(0);
-    this.waveActive = true;
-    this.waveElite = elite;
-    this.isBoss = false;
-    this.diveT = 4.5;
-    this.fireDirT = 3;
-    this.hitThisWave = false;
-    const label = `SECTOR ${r.sector + 1} // WAVE ${r.combatInSector}`;
-    if (elite) {
-      this.say(FLAVOR.elite[rng.int(0, FLAVOR.elite.length - 1)], label, true, 2.4);
-      this.sfx('boss');
-    } else {
-      this.say(FLAVOR.wave[rng.int(0, FLAVOR.wave.length - 1)], label, false, 2.2);
-      this.sfx('wave');
-    }
-    this.pushLog(`${elite ? 'elite ' : ''}intrusion: ${total} processes`);
-    this.setPhase('playing');
-  }
-
-  private batchRows: RowDef[] = [];
-  private batchEntries: EntryPattern[] = [];
-  private batchRng: Rng = new Rng(1);
-  batchesLeft = 0;
-  private waveClock = 0;
-
-  /** Spawns one formation pass into the free slots; returns the unit count. */
-  private spawnBatch(pass: number): number {
-    const rows = this.batchRows;
-    const rng = this.batchRng;
-    const elite = this.waveElite;
-    const taken = new Set<string>();
-    for (const u of this.units) if (!u.dead && u.hasSlot) taken.add(`${u.row}:${u.col}`);
-    let total = 0;
-    const flip = rng.chance(0.5) ? 1 : -1;
-    // later passes enter bottom rows first so they reach the player sooner
-    const order = rows.map((_, i) => i);
-    if (pass > 0) order.reverse();
-    order.forEach((ri, oi) => {
-      const row = rows[ri];
-      const pat = this.batchEntries[(ri + pass + (elite ? 1 : 0)) % this.batchEntries.length];
-      const half = Math.ceil(row.cols / 2);
-      for (let c = 0; c < row.cols; c++) {
-        const col = c - (row.cols - 1) / 2;
-        if (taken.has(`${ri}:${col}`)) continue;
-        const side = (c < half ? -1 : 1) * flip;
-        const k = c < half ? c : c - half;
-        const u = this.makeUnit(row.kind, -200, -200, elite && (ri === 0 || rng.chance(0.25)));
-        if (!u) continue;
-        u.col = col;
-        u.row = ri;
-        u.hasSlot = true;
-        u.side = side;
-        u.state = U_ENTER;
-        u.delay = (pass ? 0.2 : 0.6) + oi * 1.1 + (side === flip ? 0 : 0.55) + k * 0.13;
-        this.entryPath(u, pat, side);
-        u.e.x = u.p0x;
-        u.e.y = u.p0y;
-        total++;
+    const cs = Math.random() < 0.5 ? -1 : 1;
+    const cluster = ++this.clusterSeq;
+    let made = 0;
+    for (let i = 0; i < g.n; i++) {
+      const side = g.from === 'swoop' || g.from === 'cluster' ? cs : i % 2 === 0 ? cs : -cs;
+      let x = 0;
+      let y = 0;
+      let gx = 0;
+      let gy = 0;
+      switch (g.from) {
+        case 'top':
+          x = rand(50, FW - 50);
+          y = -32;
+          gx = x + rand(-40, 40);
+          gy = rand(70, 130);
+          break;
+        case 'walls':
+          x = side < 0 ? 26 : FW - 26;
+          y = -32;
+          gx = x;
+          gy = rand(FH * 0.2, FH * 0.34);
+          break;
+        case 'corners':
+          x = side < 0 ? -32 : FW + 32;
+          y = rand(-30, 50);
+          gx = side < 0 ? rand(90, 180) : FW - rand(90, 180);
+          gy = rand(90, 170);
+          break;
+        case 'edges': {
+          [gx, gy] = this.stationFor(side);
+          x = gx;
+          y = -34;
+          break;
+        }
+        case 'sides':
+          x = side < 0 ? -36 : FW + 36;
+          y = rand(FH * 0.42, FH * 0.72);
+          gx = side < 0 ? 80 : FW - 80;
+          gy = y;
+          break;
+        case 'phase':
+          x = rand(60, FW - 60);
+          y = rand(70, FH * 0.4);
+          gx = x;
+          gy = y;
+          break;
+        case 'swoop':
+          x = side < 0 ? -40 : FW + 40;
+          y = rand(40, 90);
+          break;
+        case 'cluster':
+          x = side < 0 ? -30 : FW + 30;
+          y = rand(50, 140) + i * 22;
+          gx = FW / 2;
+          gy = FH * 0.25;
+          break;
+        case 'boss':
+          x = bx + rand(-30, 30);
+          y = by + 30;
+          gx = x;
+          gy = y + 40;
+          break;
       }
-    });
-    this.waveTotal += total;
-    return total;
-  }
-
-  private startDive(u: Unit, skipTell = false): void {
-    const e = u.e;
-    const s = e.x < this.FW / 2 ? -1 : 1;
-    const tx = clamp(this.px + rand(-40, 40), 40, this.FW - 40);
-    const spd = 1 + this.runSector() * 0.12;
-    if (u.kind === 'crawler' && !skipTell) {
-      crawlerLunge(e as EN.Crawler);
-      u.state = U_TELL;
-      u.stateT = 0;
-      return;
+      if (g.kind === 'sentinel' && (g.from === 'boss' || g.from === 'phase' || g.from === 'top' || g.from === 'corners')) [gx, gy] = this.stationFor(side);
+      const u = this.makeUnit(g.kind, x, y, elite && Math.random() < 0.35);
+      if (!u) break;
+      made++;
+      u.from = g.from;
+      u.side = side;
+      u.gx = gx;
+      u.gy = gy;
+      u.baseX = gx;
+      u.cluster = cluster;
+      u.cidx = i;
+      u.delay = i * (g.gap ?? 0.6);
+      u.p3y = rand(FH * 0.36, FH * 0.5); // crawler hunt line
+      u.state = U_ENTER;
+      if (g.kind === 'wraith') {
+        if (g.from === 'swoop') {
+          u.state = U_SWOOP;
+          const cx = FW / 2;
+          const k = i - (g.n - 1) / 2;
+          u.p0x = x;
+          u.p0y = y;
+          u.p1x = cx + side * FW * 0.15;
+          u.p1y = FH * 0.55;
+          u.p2x = cx - side * FW * 0.35;
+          u.p2y = FH * 0.22;
+          u.p3x = cx + k * 58;
+          u.p3y = 120 + Math.abs(k) * 24;
+          u.pdur = 4.6;
+          u.pt = 0;
+        } else u.state = U_ACT;
+      }
+      if (g.kind === 'leech' && g.from === 'boss') u.state = U_HUNT;
+      if (u.delay <= 0) spawnEnemy(u.e);
     }
-    if (u.kind === 'leech') {
-      u.state = U_SEEK;
-      u.stateT = 0;
-      return;
-    }
-    if (u.kind === 'wraith') {
-      wraithStrike(e as EN.Wraith);
-      u.state = U_GHOST;
-      u.stateT = 0;
-      u.shots = 0;
-      return;
-    }
-    u.state = U_DIVE;
-    u.stateT = 0;
-    u.shots = 0;
-    u.shotT = rand(0.4, 0.9);
-    if (u.kind === 'sentinel') {
-      // slow strafing descent that holds mid-screen
-      this.setPath(u, e.x, e.y, e.x + s * 90, e.y + 60, tx - s * 120, this.FH * 0.5, tx + s * 140, this.FH + 70, 4.4 / spd, false);
-    } else if (u.kind === 'swarm') {
-      this.setPath(u, e.x, e.y, e.x - s * 160, e.y + this.FH * 0.3, tx + s * 160, this.FH * 0.55, tx - s * 40, this.FH + 70, 3.0 / spd, false);
-    } else {
-      this.setPath(u, e.x, e.y, e.x + s * 110, e.y - 50, tx + s * 70, this.FH * 0.62, tx - s * 60, this.FH + 70, 2.5 / spd, false);
-    }
-  }
-
-  private returnToSlot(u: Unit): void {
-    const e = u.e;
-    u.state = U_RETURN;
-    u.stateT = 0;
-    if (u.hasSlot) {
-      this.setPath(u, e.x, e.y, e.x, e.y - 70, this.slotX(u), this.slotY(u) + 90, 0, 0, 1.8, true);
-    } else {
-      const hx = rand(80, this.FW - 80);
-      const hy = rand(150, 260);
-      this.setPath(u, e.x, e.y, e.x, e.y - 60, hx, hy + 80, hx, hy, 1.8, false);
-    }
-  }
-
-  private wrapToTop(u: Unit): void {
-    const e = u.e;
-    const x = u.hasSlot ? this.slotX(u) : rand(80, this.FW - 80);
-    e.x = x;
-    e.y = -70;
-    e.vx = 0;
-    e.vy = 60;
-    u.state = U_RETURN;
-    u.stateT = 0;
-    if (u.hasSlot) this.setPath(u, x, -70, x, 20, this.slotX(u), this.slotY(u) - 50, 0, 0, 1.5, true);
-    else {
-      const hy = rand(150, 260);
-      this.setPath(u, x, -70, x, 40, x, hy - 40, x, hy, 1.5, false);
-    }
+    return made;
   }
 
   private tangible(u: Unit): boolean {
-    if (u.dead || u.delay > 0 || u.state === U_SPLIT) return false;
+    if (u.dead || u.delay > 0 || u.state === U_DYING) return false;
     const e = u.e;
     if (!e.alive) return false;
     if (e.kind === 'wraith' && e.vis < 0.45) return false;
     if (u.state === U_BOSS && this.bs && (this.bs.inv > 0 || this.bs.entering > 0 || this.bs.dying >= 0)) return false;
-    return e.y > -30;
+    return e.x > -12 && e.x < this.FW + 12 && e.y > -12 && e.y < this.FH + 12;
   }
 
-  /** Wraith is visible but intangible (for bullets passing through). */
+  /** Start a shot tell: core flash + aim line for TELL_TIME, then fire if still visible. */
+  private queueTell(u: Unit, kind: number, n: number, spread: number, speed: number): void {
+    if (u.tellT > 0 || this.phase !== 'playing') return;
+    u.tellT = TELL_TIME;
+    u.tellA = Math.atan2(this.py - u.e.y, this.px - u.e.x);
+    u.tellKind = kind;
+    u.tellN = n;
+    u.tellSpread = spread;
+    u.tellSpeed = speed;
+  }
+
+  private releaseTell(u: Unit): void {
+    if (!this.visibleForFire(u) || this.phase !== 'playing' || this.dying >= 0) return;
+    const e = u.e;
+    this.aimed(u.tellKind, e.x, e.y, u.tellSpeed, u.tellN, u.tellSpread, u.tellA);
+    this.particle(P_EMBER, e.x, e.y, 0, 0, 0.15, 26, C_RED, 0);
+    this.sfx('enemyShot');
+  }
+
+  private countAlive(): number {
+    let n = 0;
+    for (const u of this.units) if (!u.dead && u.state !== U_DYING) n++;
+    return n;
+  }
+
+  private beginWave(elite: boolean, fightBonus: boolean): void {
+    const r = this.run;
+    if (!r) return;
+    this.resetCombat();
+    r.waveNo++;
+    const sec = this.sector;
+    const idx = Math.min(sec.waves.length - 1, r.waveInSector);
+    const groups = sec.waves[idx].groups.slice();
+    if (elite) for (const g of sec.eliteExtra) groups.push(g);
+    groups.sort((a, b) => a.at - b.at);
+    this.groups = groups;
+    this.groupIdx = 0;
+    this.waveClock = 0;
+    this.waveTotal = groups.reduce((a, g) => a + g.n, 0);
+    this.waveActive = true;
+    this.waveElite = elite;
+    this.fightBonus = fightBonus;
+    this.isBoss = false;
+    this.fireDirT = 2.5;
+    this.strikeT = 4;
+    this.hitThisWave = false;
+    const label = `SECTOR ${r.sector + 1} // WAVE ${r.waveInSector + 1}/${sec.waves.length}`;
+    if (elite) {
+      this.say(FLAVOR.elite[(Math.random() * FLAVOR.elite.length) | 0], label, true, 2.4);
+      this.sfx('boss');
+    } else {
+      this.say(FLAVOR.wave[(Math.random() * FLAVOR.wave.length) | 0], label, false, 2.2);
+      this.sfx('wave');
+    }
+    this.pushLog(`${elite ? 'elite ' : ''}intrusion: ${this.waveTotal} processes`);
+    this.setPhase('playing');
+  }
+
   private updateUnits(dt: number): void {
     const target = tmpV;
-    target.x = this.px;
-    target.y = this.py;
     const FH = this.FH;
+    const FW = this.FW;
+    const playing = this.phase === 'playing';
     let latched = 0;
+    // swarm cluster anchors drift slowly across the upper / middle field
+    const wc = this.waveClock;
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i];
       if (u.dead) continue;
       if (u.delay > 0) {
         u.delay -= dt;
         if (u.delay > 0) continue;
+        spawnEnemy(u.e);
       }
+      target.x = this.px;
+      target.y = this.py;
       const e = u.e;
       u.t += dt;
       u.stateT += dt;
       u.flash = Math.max(0, u.flash - dt);
-      let auth = 0;
-      let dx = 0;
-      let dy = 0;
-      let useIntent = true;
-      // suppress library auto-behaviours we schedule ourselves
+      if (u.state === U_BOSS) {
+        this.updateBossUnit(u, dt);
+        continue;
+      }
+      if (u.state === U_DYING) {
+        updateEnemy(e, dt, target, null);
+        this.adoptFragments(u);
+        if (e.done) u.dead = true;
+        continue;
+      }
+      // suppress library auto-attacks we schedule ourselves
       if (e.kind === 'sentinel' && e.mode === 0) e.dur = 1e9;
-      if (e.kind === 'wraith' && e.mode === 0 && u.state !== U_GHOST) e.modeT = 0;
+      if (e.kind === 'wraith' && e.mode === 0 && u.state !== U_STRIKE) e.modeT = 0;
 
-      switch (u.state) {
-        case U_ENTER: {
-          u.pt += dt / u.pdur;
-          const t = Math.min(1, u.pt);
-          const sx = this.slotX(u);
-          const sy = this.slotY(u);
-          dx = bez(t, u.p0x, u.p1x, u.p2x, sx);
-          dy = bez(t, u.p0y, u.p1y, u.p2y, sy);
-          auth = 12;
-          if (u.pt >= 1) {
-            u.state = U_FORM;
-            u.stateT = 0;
+      let intent: Vec | null = null;
+      const dxp = this.px - e.x;
+      const dyp = this.py - e.y;
+      const dp = Math.hypot(dxp, dyp) || 1;
+      switch (e.kind) {
+        case 'crawler': {
+          if (u.state === U_ENTER) {
+            intent = this.goal(u, u.gx, u.gy, 80);
+            if (this.onScreen(e, 16) && (Math.hypot(u.gx - e.x, u.gy - e.y) < 30 || u.stateT > 7)) {
+              u.state = U_ACT;
+              u.stateT = 0;
+              u.baseX = e.x;
+            }
+          } else if (u.state === U_ACT) {
+            // skitter down in a zig-zag, drifting off the walls
+            u.baseX += (FW / 2 - u.baseX) * Math.min(1, dt * 0.15);
+            const zx = clamp(u.baseX + Math.sin(u.t * 1.5 + u.id * 1.7) * 90, 30, FW - 30);
+            intent = this.goal(u, zx, e.y + 70, 78);
+            if (e.y > u.p3y || dp < 170) {
+              u.state = U_HUNT;
+              u.stateT = 0;
+            }
           }
+          // U_HUNT: library stalk + lunge (no intent)
           break;
         }
-        case U_FORM:
-          if (u.hasSlot) {
-            dx = this.slotX(u);
-            dy = this.slotY(u);
+        case 'sentinel': {
+          if (u.state === U_ENTER) {
+            intent = this.goal(u, u.gx, u.gy, 38);
+            if (Math.hypot(u.gx - e.x, u.gy - e.y) < 10 || u.stateT > 16) {
+              u.state = U_ACT;
+              u.stateT = 0;
+              u.actT = rand(12, 18);
+            }
           } else {
-            dx = u.p3x + Math.sin(u.t * 0.9 + u.id) * 24;
-            dy = u.p3y + Math.sin(u.t * 1.3 + u.id) * 8;
+            u.actT -= dt;
+            if (u.actT <= 0 && e.mode === 0) {
+              u.gx = clamp(e.x + rand(-140, 140), 44, FW - 44);
+              u.gy = clamp(e.y + rand(-50, 50), 70, FH * 0.38);
+              u.state = U_ENTER;
+              u.stateT = 0;
+            }
           }
-          auth = 7;
-          break;
-        case U_TELL: {
-          // crawler freeze -> lunge, then break into a dive
-          useIntent = false;
-          if ((e.kind === 'crawler' && e.mode === 0 && u.stateT > 0.25) || u.stateT > 2.5) this.startDive(u, true);
           break;
         }
-        case U_DIVE:
-        case U_RETURN: {
-          u.pt += dt / u.pdur;
-          const t = Math.min(1, u.pt);
-          const ex = u.toSlot ? this.slotX(u) : u.p3x;
-          const ey = u.toSlot ? this.slotY(u) : u.p3y;
-          dx = bez(t, u.p0x, u.p1x, u.p2x, ex);
-          dy = bez(t, u.p0y, u.p1y, u.p2y, ey);
-          auth = 10;
-          if (u.state === U_DIVE) {
-            this.diveFire(u, dt);
-            if (u.pt >= 1) this.wrapToTop(u);
-          } else if (u.pt >= 1) {
-            if (u.hasSlot) {
-              u.state = U_FORM;
+        case 'leech': {
+          if (u.state === U_ENTER || u.state === U_HUNT) {
+            if (u.state === U_ENTER && this.onScreen(e, 10)) {
+              u.state = U_HUNT;
+              u.stateT = 0;
+            }
+            if (e.mode === 0) {
+              const w = Math.sin(u.t * 2.6 + u.id) * 0.4;
+              const ax = dxp / dp - (dyp / dp) * w;
+              const ay = dyp / dp + (dxp / dp) * w;
+              const al = Math.hypot(ax, ay) || 1;
+              intentV.x = (ax / al) * 72;
+              intentV.y = (ay / al) * 72;
+              intent = intentV;
+              u.actT -= dt;
+              if (playing && u.state === U_HUNT && dp < 72 && u.actT <= 0 && this.dashT <= 0 && this.latchedCount < 2) {
+                leechToggleLatch(e);
+                u.actT = 1.2;
+              }
+            }
+            if (leechIsLatched(e)) {
+              u.state = U_LATCH;
+              u.stateT = 0;
+              this.sfx('latch');
+              this.say(FLAVOR.latch, 'INTEGRITY DRAINING', true, 1.6);
+              this.pushLog('leech latched');
+            }
+          } else if (u.state === U_LATCH) {
+            if (!leechIsLatched(e)) {
+              u.state = U_RETREAT;
               u.stateT = 0;
             } else {
-              u.state = U_FORM;
+              latched++;
+              if (playing) this.drain(dt * (6 + this.runSector() * 1.5));
+            }
+          } else if (u.state === U_RETREAT) {
+            intent = this.goal(u, e.x - (dxp / dp) * 200, Math.max(60, e.y - 160), 72);
+            if (u.stateT > 1.6) {
+              u.state = U_HUNT;
               u.stateT = 0;
-              u.p3x = dx;
-              u.p3y = dy;
+              u.actT = 0.8;
             }
           }
           break;
         }
-        case U_SEEK: {
-          // leech homing on the player, then latch
-          if (e.kind !== 'leech') break;
-          const ddx = this.px - e.x;
-          const ddy = this.py - e.y;
-          const d = Math.hypot(ddx, ddy) || 1;
-          const sp = 150 + this.runSector() * 20;
-          intentV.x = (ddx / d) * sp + Math.sin(u.t * 3) * 40;
-          intentV.y = (ddy / d) * sp;
-          if (e.mode !== 0) useIntent = false;
-          if (e.mode === 0 && d < 70 && u.stateT > 0.4 && this.dashT <= 0) leechToggleLatch(e);
-          if (leechIsLatched(e)) {
-            u.state = U_LATCH;
-            u.stateT = 0;
-            this.sfx('latch');
-            this.say(FLAVOR.latch, 'INTEGRITY DRAINING', true, 1.6);
-            this.pushLog('leech latched');
-          } else if (u.stateT > 6) {
-            u.state = U_DIVE;
-            this.setPath(u, e.x, e.y, e.x, e.y + 80, e.x, FH * 0.9, e.x, FH + 80, 1.4, false);
-          }
-          break;
-        }
-        case U_LATCH: {
-          useIntent = false;
-          if (e.kind === 'leech' && !leechIsLatched(e)) {
-            this.returnToSlot(u);
+        case 'wraith': {
+          if (u.state === U_SWOOP) {
+            u.pt = Math.min(1, u.pt + dt / u.pdur);
+            const t = u.pt;
+            const t2 = Math.min(1, t + 0.02);
+            const qx = bez(t, u.p0x, u.p1x, u.p2x, u.p3x);
+            const qy = bez(t, u.p0y, u.p1y, u.p2y, u.p3y);
+            const vx = (bez(t2, u.p0x, u.p1x, u.p2x, u.p3x) - qx) / (0.02 * u.pdur);
+            const vy = (bez(t2, u.p0y, u.p1y, u.p2y, u.p3y) - qy) / (0.02 * u.pdur);
+            intentV.x = clamp(vx + (qx - e.x) * 2.5, -120, 120);
+            intentV.y = clamp(vy + (qy - e.y) * 2.5, -120, 120);
+            intent = intentV;
+            if (u.pt >= 1) {
+              u.state = U_ACT;
+              u.stateT = 0;
+              u.gx = u.p3x;
+              u.gy = u.p3y;
+              u.actT = rand(2, 4);
+            }
+          } else if (u.state === U_STRIKE) {
+            // phased out and relocating next to the player (library-driven)
+            if ((e.mode === 0 && u.stateT > 0.4) || u.stateT > 5) {
+              u.state = U_ACT;
+              u.stateT = 0;
+              u.shotT = -1; // strike shot pending once fully visible
+              u.gx = clamp(e.x + rand(-80, 80), 60, FW - 60);
+              u.gy = rand(70, FH * 0.35);
+              u.actT = rand(2.5, 4);
+            }
           } else {
-            latched++;
-            this.drain(dt * (8 + this.runSector() * 2));
+            u.actT -= dt;
+            if (u.actT <= 0 || Math.hypot(u.gx - e.x, u.gy - e.y) < 16) {
+              u.gx = rand(60, FW - 60);
+              u.gy = rand(70, FH * 0.42);
+              u.actT = rand(3, 5);
+            }
+            intent = this.goal(u, u.gx, u.gy, u.shotT === -1 ? 20 : 60);
+            if (playing && u.shotT === -1 && this.visibleForFire(u)) {
+              u.shotT = rand(3, 5);
+              this.queueTell(u, EB_NEEDLE, 3 + Math.min(1, this.runSector()), 0.2, this.sector.bulletSpeed * 1.15);
+            }
           }
           break;
         }
-        case U_GHOST: {
-          useIntent = false;
-          if (e.kind !== 'wraith') break;
-          if (e.mode === 3 && u.shots === 0) {
-            u.shots = 1;
-            // materialise next to the player and strike
-            this.aimed(EB_NEEDLE, e.x, e.y, this.sector.bulletSpeed * 1.25, 3 + this.runSector(), 0.2);
-            this.sfx('enemyShot');
-            this.particle(P_RING, e.x, e.y, 60, 0, 0.3, 10, C_RED, 0);
+        case 'swarm': {
+          const ax = FW / 2 + Math.sin(wc * 0.22 + u.cluster * 2.1) * FW * 0.3;
+          const ay = FH * (0.24 + 0.12 * Math.sin(wc * 0.31 + u.cluster));
+          const a = u.cidx * 2.09 + u.t * 0.35;
+          intent = this.goal(u, ax + Math.cos(a) * 38, ay + Math.sin(a) * 30, u.state === U_ENTER ? 70 : 55);
+          if (u.state === U_ENTER && this.onScreen(e, 12)) u.state = U_ACT;
+          if (playing && this.runSector() > 0 && u.state === U_ACT) {
+            u.shotT -= dt;
+            if (u.shotT <= 0 && this.visibleForFire(u)) {
+              u.shotT = rand(5, 8);
+              this.queueTell(u, EB_PELLET, 2, 0.22, this.sector.bulletSpeed * 0.8);
+            }
           }
-          if (e.mode === 0 && u.stateT > 0.5) this.returnToSlot(u);
-          else if (u.stateT > 5) this.returnToSlot(u);
           break;
         }
-        case U_FREE: {
-          useIntent = false;
+        case 'fragment': {
           u.life -= dt;
           if (u.life <= 0) {
-            useIntent = true;
             intentV.x = 0;
-            intentV.y = 260;
-            if (e.y > FH + 40) u.dead = true;
+            intentV.y = 220;
+            intent = intentV;
+            if (e.y > FH + 30) u.dead = true;
           }
           break;
         }
-        case U_SPLIT: {
-          useIntent = false;
-          if (e.kind === 'swarm' && e.spawned) {
-            for (const f of e.spawned) {
-              if (this.units.length >= MAX_UNITS) break;
-              const hp = Math.max(1, Math.round(KIND_STATS.fragment.hp * this.sector.hpMul));
-              const fu: Unit = {
-                ...this.blankUnit(f, 'fragment'),
-                hp,
-                maxHp: hp,
-                state: U_FREE,
-                life: rand(5, 8),
-              };
-              this.units.push(fu);
-            }
-            e.spawned = null;
-          }
-          if (e.done) u.dead = true;
+        default:
           break;
+      }
+      updateEnemy(e, dt, target, intent);
+
+      // shot tells
+      if (u.tellT > 0) {
+        u.tellT -= dt;
+        if (u.tellT <= 0) {
+          u.tellT = 0;
+          this.releaseTell(u);
         }
-        case U_BOSS:
-          this.updateBossUnit(u, dt);
-          continue;
       }
-
-      if (auth > 0) {
-        intentV.x = clamp((dx - e.x) * 6, -700, 700);
-        intentV.y = clamp((dy - e.y) * 6, -700, 700);
-      }
-      updateEnemy(e, dt, target, useIntent && (auth > 0 || u.state === U_SEEK || u.state === U_FREE) ? intentV : null);
-      if (auth > 0) {
-        const k = damp(auth, dt);
-        e.x += (dx - e.x) * k;
-        e.y += (dy - e.y) * k;
-      }
-      if (u.state === U_FORM && (e.kind === 'crawler' || e.kind === 'leech')) e.heading = turnToward(e.heading, Math.PI / 2, 2.5 * dt);
-
-      // sentinel shots
-      if (e.kind === 'sentinel' && e.fired) {
+      // sentinel shots: the library's charge-up (core + aim line) is the tell
+      if (e.kind === 'sentinel' && e.fired && playing && this.visibleForFire(u)) {
         sentinelMuzzle(e, tmpV);
-        const sp = this.sector.bulletSpeed;
-        this.aimed(EB_ORB, tmpV.x, tmpV.y, sp, u.elite ? 3 : 1, 0.2, e.aim);
+        this.aimed(EB_ORB, tmpV.x, tmpV.y, this.sector.bulletSpeed, u.elite ? 3 : 1, 0.2, e.aim);
         this.sfx('enemyShot');
-        target.x = this.px;
-        target.y = this.py;
-      }
-      // keep free/latch units on the field
-      if (u.state === U_FREE && u.life > 0) {
-        e.x = clamp(e.x, 10, this.FW - 10);
-        e.y = clamp(e.y, -20, FH - 10);
       }
     }
     this.latchedCount = latched;
+  }
+
+  /** Swarm nodes split into fragments after killEnemy; adopt them as units. */
+  private adoptFragments(u: Unit): void {
+    const e = u.e;
+    if (e.kind !== 'swarm' || !e.spawned) return;
+    for (const f of e.spawned) {
+      if (this.units.length >= MAX_UNITS) break;
+      const hp = Math.max(1, Math.round(KIND_STATS.fragment.hp * this.sector.hpMul));
+      const fu: Unit = { ...this.blankUnit(f, 'fragment'), hp, maxHp: hp, state: U_FREE, life: rand(5, 8) };
+      this.units.push(fu);
+    }
+    e.spawned = null;
   }
 
   private blankUnit(e: Enemy, kind: EnemyKind): Unit {
@@ -1372,22 +1424,30 @@ export class Game {
       e,
       kind,
       state: U_FREE,
+      from: 'phase',
       hp: ks.hp,
       maxHp: ks.hp,
       r: ks.r,
-      col: 0,
-      row: 0,
-      hasSlot: false,
+      gx: e.x,
+      gy: e.y,
+      baseX: e.x,
       p0x: 0, p0y: 0, p1x: 0, p1y: 0, p2x: 0, p2y: 0, p3x: 0, p3y: 0,
       pt: 0,
       pdur: 1,
-      toSlot: false,
       delay: 0,
-      side: 1,
       t: 0,
       stateT: 0,
-      shots: 0,
+      actT: 0,
       shotT: 0,
+      tellT: 0,
+      tellA: 0,
+      tellKind: EB_PELLET,
+      tellN: 1,
+      tellSpread: 0,
+      tellSpeed: 0,
+      cluster: 0,
+      cidx: 0,
+      side: 1,
       flash: 0,
       elite: false,
       score: ks.score,
@@ -1398,84 +1458,47 @@ export class Game {
     };
   }
 
-  private diveFire(u: Unit, dt: number): void {
-    if (u.kind === 'sentinel') {
-      const e = u.e;
-      if (e.kind === 'sentinel' && e.mode === 0 && u.shots < 2 && e.y > 120 && e.y < this.FH * 0.6) {
-        u.shotT -= dt;
-        if (u.shotT <= 0) {
-          sentinelCharge(e);
-          u.shots++;
-          u.shotT = 1.6;
-        }
-      }
-      return;
-    }
-    if (this.runSector() === 0 && !u.elite) return;
-    if (u.shots > 0 || u.e.y < this.FH * 0.25 || u.e.y > this.FH * 0.55) return;
-    u.shotT -= dt;
-    if (u.shotT <= 0) {
-      u.shots++;
-      this.aimed(EB_PELLET, u.e.x, u.e.y + 8, this.sector.bulletSpeed, u.elite ? 3 : 1, 0.22);
-      this.sfx('enemyShot');
-    }
-  }
-
   private director(dt: number): void {
     if (!this.waveActive || this.clearT >= 0) return;
-    let inForm = 0;
-    let diving = 0;
-    let alive = 0;
-    for (const u of this.units) {
-      if (u.dead || u.state === U_BOSS) continue;
-      if (u.delay > 0) {
-        alive++;
-        continue;
-      }
-      alive++;
-      if (u.state === U_FORM) inForm++;
-      else if (u.state === U_DIVE || u.state === U_TELL || u.state === U_SEEK || u.state === U_GHOST || u.state === U_LATCH) diving++;
-    }
-    this.waveClock += dt;
-    if (!this.isBoss && this.batchesLeft > 0) {
-      const passAlive = this.waveTotal > 0 ? alive / this.waveTotal : 0;
-      if (passAlive < 0.3 || this.waveClock > 24) {
-        this.batchesLeft--;
-        this.waveClock = 0;
-        const pass = (this.waveElite ? 3 : 2) - this.batchesLeft;
-        this.waveTotal = alive;
-        const n = this.spawnBatch(pass);
-        if (n > 0) {
-          this.say('REINFORCEMENTS', `${n} PROCESSES INBOUND`, true, 1.4);
-          this.pushLog(`reinforcements: ${n}`);
-          this.sfx('wave');
-        }
-        alive += n;
-      }
-    }
-    const frac = this.waveTotal > 0 ? alive / this.waveTotal : 1;
     const sec = this.sector;
-    this.diveT -= dt;
-    const maxDivers = this.isBoss ? 4 : sec.maxDivers + (frac < 0.35 ? 1 : 0);
-    if (this.diveT <= 0 && inForm > 0 && diving < maxDivers) {
-      this.diveT = sec.diveGap * (0.45 + 0.55 * frac) * rand(0.7, 1.3) * (this.isBoss ? 1.4 : 1);
-      const n = Math.min(maxDivers - diving, frac < 0.5 ? 2 : 1 + (Math.random() < 0.35 ? 1 : 0));
-      for (let k = 0; k < n; k++) {
-        const cands = this.units.filter((u) => !u.dead && u.state === U_FORM && u.delay <= 0 && u.stateT > 0.8);
-        if (!cands.length) break;
-        // prefer the lower rows (closest to the player)
-        cands.sort((a, b) => b.row - a.row + (Math.random() - 0.5) * 2.5);
-        this.startDive(cands[0]);
+    if (!this.isBoss) {
+      this.waveClock += dt;
+      let alive = this.countAlive();
+      while (this.groupIdx < this.groups.length) {
+        const g = this.groups[this.groupIdx];
+        const due = this.waveClock >= g.at || alive <= 2;
+        if (!due || alive >= sec.maxAlive) break;
+        if (this.waveClock < g.at) this.waveClock = g.at;
+        alive += this.spawnGroup(g, this.waveElite);
+        this.groupIdx++;
       }
     }
-    // sentinel fire control
+    // sentinel volleys: one at a time, only from fully visible stations
     this.fireDirT -= dt;
     if (this.fireDirT <= 0) {
-      const sents = this.units.filter((u) => !u.dead && u.delay <= 0 && u.e.kind === 'sentinel' && u.state === U_FORM && u.e.mode === 0);
-      this.fireDirT = sec.fireGap * rand(0.6, 1.3) * (sents.length > 5 ? 0.8 : 1) * (this.isBoss ? 1.6 : 1);
+      const sents = this.units.filter((u) => u.e.kind === 'sentinel' && u.state === U_ACT && u.e.mode === 0 && this.visibleForFire(u) && this.onScreen(u.e, 30));
+      this.fireDirT = sec.fireGap * rand(0.7, 1.3) * (sents.length > 3 ? 0.75 : 1) * (this.isBoss ? 1.6 : 1);
       if (sents.length) {
         const s = sents[(Math.random() * sents.length) | 0];
         if (s.e.kind === 'sentinel') sentinelCharge(s.e);
+      }
+    }
+    // wraith strikes
+    this.strikeT -= dt;
+    if (this.strikeT <= 0) {
+      this.strikeT = sec.strikeGap * rand(0.8, 1.3);
+      let striking = 0;
+      for (const u of this.units) if (u.state === U_STRIKE) striking++;
+      if (striking < 1 + this.runSector()) {
+        const cands = this.units.filter((u) => u.e.kind === 'wraith' && u.state === U_ACT && u.stateT > 2.5 && u.shotT !== -1 && this.visibleForFire(u));
+        if (cands.length) {
+          const w = cands[(Math.random() * cands.length) | 0];
+          if (w.e.kind === 'wraith') {
+            wraithStrike(w.e);
+            w.state = U_STRIKE;
+            w.stateT = 0;
+          }
+        }
       }
     }
   }
@@ -1514,19 +1537,18 @@ export class Game {
       reachNext: 0,
       dying: -1,
       spin: 0,
+      windup: 0,
     };
+    spawnEnemy(e);
     this.waveActive = true;
     this.isBoss = true;
-    this.batchesLeft = 0;
+    this.groups = [];
+    this.groupIdx = 0;
     this.waveTotal = 1;
     this.waveElite = false;
-    this.diveT = 4;
     this.fireDirT = 4;
+    this.strikeT = 5;
     this.hitThisWave = false;
-    this.formDx = 56;
-    this.formDy = 46;
-    this.formTop = 300;
-    this.swayAmp = 30;
     this.say(FLAVOR.boss, `${def.name} // ${def.title}`, true, 3);
     this.sfx('boss');
     this.pushLog(`breach: ${def.name.toLowerCase()}`);
@@ -1552,20 +1574,18 @@ export class Game {
       bs.entering -= dt;
       hx = this.FW / 2;
       hy = 175;
-      k = 1.1;
+      k = 1.4;
     } else if (bs.sweep) {
       hx = clamp(this.px, 120, this.FW - 120);
-      hy = this.FH * 0.36;
+      hy = this.FH * 0.34;
       k = 1.4;
     } else if (bs.laser > 0) {
       k = 0.6;
     }
-    intentV.x = clamp((hx - e.x) * 2, -300, 300);
-    intentV.y = clamp((hy - e.y) * 2, -300, 300);
-    updateEnemy(e, dt, target, intentV);
-    const kk = damp(k, dt);
-    e.x += (hx - e.x) * kk;
-    e.y += (hy - e.y) * kk;
+    // intent only; the module smooths and caps it
+    intentV.x = clamp((hx - e.x) * k, -170, 170);
+    intentV.y = clamp((hy - e.y) * k, -170, 170);
+    updateEnemy(e, dt, target, bs.dying >= 0 ? null : intentV);
 
     if (bs.dying >= 0) {
       bs.dying += dt;
@@ -1615,7 +1635,9 @@ export class Game {
         bs.atkT = 0;
         bs.atkStep = 0;
         bs.spin = Math.random() * TAU;
-        if (bs.attack === 'ring' || bs.attack === 'laser') bossCharge(e);
+        // ring and laser carry their own long charge-up; everything else gets a short tell
+        bs.windup = bs.attack === 'ring' || bs.attack === 'laser' || bs.attack === 'summon' ? 0 : TELL_TIME + 0.1;
+        bossCharge(e);
         if (bs.attack === 'laser') {
           bs.laser = 1;
           bs.laserX = e.x;
@@ -1653,7 +1675,8 @@ export class Game {
 
   private runAttack(u: Unit, e: Boss, bs: BossState, dt: number): void {
     bs.atkT += dt;
-    const t = bs.atkT;
+    if (bs.atkT < bs.windup) return;
+    const t = bs.atkT - bs.windup;
     const sp = bs.def.bulletSpeed * (1 + bs.phase * 0.08);
     const ph = bs.phase;
     const end = (gap: number) => {
@@ -1711,10 +1734,6 @@ export class Game {
           e.reachIdx = bs.atkStep % e.tendrils.length;
           e.reachT = 0;
           bs.atkStep++;
-          const td = e.tendrils[e.reachIdx];
-          const tipX = td.x[td.n - 1];
-          const tipY = td.y[td.n - 1];
-          this.aimed(EB_NEEDLE, tipX, tipY, sp * 0.9, 1 + ph, 0.25);
         }
         if (t > 3.6 + ph * 0.6) {
           bs.sweep = false;
@@ -1750,8 +1769,10 @@ export class Game {
         const dur = 2.6;
         const step = 0.07 - ph * 0.01;
         while (bs.atkStep * step < Math.min(t, dur)) {
-          const x = rand(20, this.FW - 20);
-          this.ebullet(EB_NEEDLE, x, -10, rand(-20, 20), sp * rand(0.7, 1.0));
+          // data barrage from the eye, sprayed downward
+          const a = Math.PI / 2 + rand(-0.95, 0.95);
+          const v = sp * rand(0.65, 1.0);
+          this.ebullet(EB_NEEDLE, e.x + Math.cos(a) * u.r * 0.5, e.y + Math.sin(a) * u.r * 0.5, Math.cos(a) * v, Math.sin(a) * v);
           bs.atkStep++;
         }
         if (t > dur) end(1);
@@ -1765,28 +1786,21 @@ export class Game {
   private bossSummon(u: Unit, n: number): void {
     const def = this.bs?.def;
     if (!def) return;
-    let living = 0;
-    for (const x of this.units) if (!x.dead && x.state !== U_BOSS) living++;
-    const count = Math.min(n, 14 - living);
+    const living = this.countAlive() - 1;
+    const count = Math.min(n, 12 - living);
     for (let i = 0; i < count; i++) {
       const kind = def.summon[(Math.random() * def.summon.length) | 0];
-      const s = i % 2 === 0 ? -1 : 1;
-      const m = this.makeUnit(kind, u.e.x, u.e.y, false);
-      if (!m) break;
-      m.hasSlot = false;
-      m.state = U_RETURN;
-      const hx = this.FW / 2 + s * rand(80, this.FW / 2 - 40);
-      const hy = rand(230, 330);
-      this.setPath(m, u.e.x, u.e.y, u.e.x + s * 140, u.e.y + 40, hx, hy - 90, hx, hy, 1.4 + i * 0.1, false);
-      this.particle(P_HEX, u.e.x, u.e.y, 40, 0, 0.3, 12, C_ORANGE, 0);
+      this.spawnGroup({ kind, n: 1, from: 'boss', at: 0, gap: 0 }, false, u.e.x, u.e.y);
     }
+    if (count > 0) this.particle(P_HEX, u.e.x, u.e.y, 60, 0, 0.35, 16, C_ORANGE, 0);
     this.waveTotal = Math.max(this.waveTotal, count + 1);
   }
 
   private finishBoss(u: Unit): void {
     const r = this.run;
-    u.dead = true;
     const e = u.e;
+    u.state = U_DYING;
+    killEnemy(e);
     this.shatter(e.x, e.y, u.r, 160, 0, 0, true);
     for (let i = 0; i < 4; i++) this.particle(P_RING, e.x, e.y, 300 + i * 160, 0, 0.6 + i * 0.2, u.r * 0.5, i % 2 ? C_RED : C_ORANGE, 0);
     this.particle(P_HEX, e.x, e.y, 260, 0, 0.7, u.r, C_WHITE, 0);
@@ -1814,11 +1828,11 @@ export class Game {
   }
 
   // ================================================================ damage
-  private hitUnit(u: Unit, dmg: number, crit: boolean, x: number, y: number, chain: number): void {
-    if (u.dead) return;
+  private hitUnit(u: Unit, dmg: number, crit: boolean, x: number, y: number, chain: number, dx = 0, dy = -1): void {
+    if (u.dead || u.state === U_DYING) return;
     u.hp -= dmg;
     u.flash = 0.08;
-    if (hurtHook) hurtHook(u.e, x, y);
+    hurtEnemy(u.e, dx, dy, clamp((dmg / u.maxHp) * 3, 0.3, 1));
     if (crit) this.text(x, y - 8, `${Math.round(dmg * 10)}`, C_WHITE, false);
     if (u.hp <= 0) this.killUnit(u, true);
     if (chain > 0) this.chainFrom(u, x, y, dmg * this.stats.chainDmg, chain);
@@ -1855,7 +1869,7 @@ export class Game {
   }
 
   private killUnit(u: Unit, byPlayer: boolean): void {
-    if (u.dead) return;
+    if (u.dead || u.state === U_DYING) return;
     const e = u.e;
     if (u.state === U_BOSS) {
       if (this.bs && this.bs.dying < 0) {
@@ -1870,14 +1884,10 @@ export class Game {
       }
       return;
     }
-    if (e.kind === 'swarm' && e.alive && e.splitT < 0) {
-      beginSplit(e);
-      u.state = U_SPLIT;
-    } else {
-      u.dead = true;
-      e.alive = false;
-      if (killHook) killHook(e);
-    }
+    // death animation (swarm nodes split into fragments); unit stays until e.done
+    u.state = U_DYING;
+    u.tellT = 0;
+    killEnemy(e);
     const big = u.kind === 'sentinel' || u.kind === 'wraith' || u.kind === 'swarm' || u.elite;
     const sz = e.size * 0.35;
     this.shatter(e.x, e.y, sz, u.kind === 'fragment' ? 6 : big ? 26 : 16, e.vx, e.vy, u.elite);
@@ -2073,14 +2083,13 @@ export class Game {
 
   // ================================================================ loop
   update(dtIn: number): void {
-    const dt = Math.min(dtIn, 0.05);
+    const dt = Math.min(dtIn, 0.05) * this.timeScale;
     this.time += dt;
     if (this.phase === 'paused') return;
     this.shake *= Math.exp(-dt * 10);
     if (this.shake < 0.05) this.shake = 0;
     this.damageFlash = Math.max(0, this.damageFlash - dt * 2.4);
     if (this.announceT > 0) this.announceT -= dt;
-    this.formT += dt;
 
     if (this.phase === 'menu') {
       this.updateDemo(dt);
@@ -2088,6 +2097,13 @@ export class Game {
       return;
     }
     if (this.phase !== 'playing') {
+      // finish death animations behind the overlays
+      for (const u of this.units) {
+        if (u.state !== U_DYING || u.dead) continue;
+        updateEnemy(u.e, dt, tmpV, null);
+        if (u.e.done) u.dead = true;
+      }
+      this.compact();
       this.idleShip(dt);
       this.updateParticles(dt);
       this.updateTexts(dt);
@@ -2117,50 +2133,27 @@ export class Game {
     for (let i = 0; i < this.trailY.length; i++) this.trailY[i] += 160 * dt;
   }
 
+  private demoT = 0;
+
+  /** Attract mode behind the start screen: the real behaviours, no combat. */
   private spawnDemo(): void {
     this.units = [];
-    this.formDx = 54;
-    this.formDy = 46;
-    this.formTop = 120;
-    this.swayAmp = 40;
-    const rows: [EnemyKind, number][] = [
-      ['sentinel', 3],
-      ['wraith', 4],
-      ['crawler', 6],
-    ];
-    rows.forEach(([kind, cols], ri) => {
-      for (let c = 0; c < cols; c++) {
-        const u = this.makeUnit(kind, 0, 0, false);
-        if (!u) continue;
-        u.col = c - (cols - 1) / 2;
-        u.row = ri;
-        u.hasSlot = true;
-        u.state = U_FORM;
-        u.e.x = this.slotX(u);
-        u.e.y = this.slotY(u);
-      }
-    });
+    this.demoT = 0;
+    this.waveClock = 0;
+    this.spawnGroup({ kind: 'sentinel', n: 2, from: 'edges', at: 0, gap: 0.5 }, false);
+    this.spawnGroup({ kind: 'crawler', n: 4, from: 'walls', at: 0, gap: 0.9 }, false);
+    this.spawnGroup({ kind: 'wraith', n: 2, from: 'phase', at: 0, gap: 1.5 }, false);
+    this.spawnGroup({ kind: 'swarm', n: 3, from: 'cluster', at: 0, gap: 0.3 }, false);
   }
 
   private updateDemo(dt: number): void {
-    if (!this.units.length) this.spawnDemo();
-    const target = tmpV;
-    target.x = this.FW / 2 + Math.sin(this.time * 0.6) * 160;
-    target.y = this.FH - 80;
-    for (const u of this.units) {
-      const e = u.e;
-      if (e.kind === 'sentinel' && e.mode === 0) e.dur = 1e9;
-      if (e.kind === 'wraith' && e.mode === 0) e.modeT = 0;
-      const dx = this.slotX(u);
-      const dy = this.slotY(u);
-      intentV.x = (dx - e.x) * 6;
-      intentV.y = (dy - e.y) * 6;
-      updateEnemy(e, dt, target, intentV);
-      const k = damp(7, dt);
-      e.x += (dx - e.x) * k;
-      e.y += (dy - e.y) * k;
-      if (e.kind === 'crawler') e.heading = turnToward(e.heading, Math.PI / 2, 2.5 * dt);
-    }
+    this.demoT += dt;
+    this.waveClock += dt;
+    if (!this.units.length || this.demoT > 30) this.spawnDemo();
+    this.px = this.FW / 2 + Math.sin(this.time * 0.5) * 170;
+    this.py = this.FH - 90;
+    this.updateUnits(dt);
+    this.compact();
   }
 
   private sim(dt: number): void {
@@ -2202,17 +2195,16 @@ export class Game {
 
     // wave completion
     if (this.waveActive && this.clearT < 0) {
-      let alive = 0;
-      for (const u of this.units) if (!u.dead) alive++;
-      if (alive === 0 && this.batchesLeft <= 0) {
+      if (this.countAlive() === 0 && this.groupIdx >= this.groups.length) {
         this.clearT = this.isBoss ? 2.4 : 1.6;
         if (!this.isBoss) {
           const sec = r ? r.sector : 0;
           const bonus = 500 * (sec + 1) * (this.waveElite ? 2 : 1);
           const nohit = this.hitThisWave ? 0 : 1000 * (sec + 1);
-          this.score += bonus + nohit;
+          const route = this.fightBonus ? 1500 : 0;
+          this.score += bonus + nohit + route;
           const fl = FLAVOR.clear[(Math.random() * FLAVOR.clear.length) | 0];
-          this.say(fl, `+${bonus}${nohit ? `  //  FLAWLESS +${nohit}` : ''}`, false, 2);
+          this.say(fl, `+${bonus + route}${nohit ? `  //  FLAWLESS +${nohit}` : ''}`, false, 2);
           this.sfx('clear');
           this.pushLog('wave purged');
         }
@@ -2238,7 +2230,8 @@ export class Game {
       r.afterPick = r.sector >= SECTORS.length - 1 ? 'victory' : 'nextSector';
       this.openOffer('boss');
     } else {
-      r.afterPick = 'map';
+      r.waveInSector++;
+      r.afterPick = 'routes';
       this.openOffer(this.waveElite ? 'elite' : 'wave');
     }
   }
@@ -2265,7 +2258,7 @@ export class Game {
     const st = this.stats;
     const over = this.buffOver > 0 || st.permOverclock;
     const speed = st.moveSpeed * (over ? 1.12 : 1);
-    const minY = this.FH - 230;
+    const minY = this.FH * (1 - PLAYER_ZONE);
     const maxY = this.FH - 40;
     let tvx = 0;
     let tvy = 0;
@@ -2373,6 +2366,15 @@ export class Game {
       const crit = Math.random() < st.crit;
       const ox = n === 1 ? this.shotSide * 4 : 0;
       this.spawnBullet(this.px + ox, this.py - 18, a, st.bulletSpeed, dmg * (crit ? st.critMult : 1), st.pierce, size, st.homing, crit, false);
+    }
+    // latched leeches sit beside the hull: every volley hits them point-blank
+    if (this.latchedCount > 0) {
+      for (const u of this.units) {
+        if (u.state !== U_LATCH || u.dead) continue;
+        this.sparks(u.e.x, u.e.y, Math.atan2(u.e.y - this.py, u.e.x - this.px), 1, 2, 80, 220, C_HOT);
+        this.hitUnit(u, dmg * 0.7, false, u.e.x, u.e.y, 0, u.e.x - this.px, u.e.y - this.py);
+        break;
+      }
     }
     this.shotSide = -this.shotSide;
     this.muzzle = 0.05;

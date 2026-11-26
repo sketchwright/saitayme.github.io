@@ -85,7 +85,7 @@ export const SECTORS: SectorDef[] = [
       { groups: [G('sentinel', 4, 'edges', 0, 0.8), G('crawler', 8, 'top', 2, 0.4), G('crawler', 8, 'walls', 12, 0.35), G('crawler', 6, 'corners', 22, 0.3), G('sentinel', 2, 'top', 26), G('crawler', 8, 'top', 32, 0.3)] },
       { groups: [G('sentinel', 4, 'corners', 0, 0.6), G('crawler', 10, 'walls', 3, 0.3), G('crawler', 8, 'top', 14, 0.3), G('sentinel', 3, 'edges', 20), G('crawler', 10, 'top', 26, 0.25)] },
     ],
-    eliteExtra: [G('sentinel', 2, 'edges', 4, 1), G('crawler', 6, 'corners', 14, 0.3)],
+    eliteExtra: [G('sentinel', 2, 'edges', 4, 1)],
     boss: {
       name: 'WARDEN.EXE',
       title: 'PERIMETER INTELLIGENCE',
@@ -125,7 +125,7 @@ export const SECTORS: SectorDef[] = [
       name: 'MNEMOSYNE',
       title: 'MEMORY CORRUPTOR',
       size: 220,
-      hp: 900,
+      hp: 780,
       phases: [0.6, 0.25],
       attacks: [
         ['spiral', 'fan', 'summon', 'rain'],
@@ -161,7 +161,7 @@ export const SECTORS: SectorDef[] = [
       name: 'ROGUE KERNEL',
       title: 'THE OVERMIND',
       size: 250,
-      hp: 1500,
+      hp: 1300,
       phases: [0.66, 0.33],
       attacks: [
         ['fan', 'ring', 'summon', 'laser', 'spiral'],

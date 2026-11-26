@@ -21,10 +21,12 @@ import {
   PK_RAPID,
   PK_SHIELD,
   TAU,
+  TELL_TIME,
   U_BOSS,
+  U_DYING,
   U_LATCH,
 } from './types';
-import { UPGRADE_BY_ID } from './content/upgrades';
+import { SYNERGIES, UPGRADE_BY_ID } from './content/upgrades';
 import { SECTORS } from './content/sectors';
 
 const ORANGE = '#f07e41';
@@ -512,8 +514,18 @@ export class Renderer {
   private drawUnitMarks(g: Game): void {
     const c = this.ctx;
     for (const u of g.units) {
-      if (u.dead || u.delay > 0 || u.state === U_BOSS) continue;
+      if (u.dead || u.delay > 0 || u.state === U_BOSS || u.state === U_DYING) continue;
       const e = u.e;
+      if (u.tellT > 0) {
+        // shot tell: thin aim line toward the locked direction
+        const f = 1 - u.tellT / TELL_TIME;
+        c.strokeStyle = `rgba(255,90,42,${(0.25 + f * 0.6).toFixed(2)})`;
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(e.x, e.y);
+        c.lineTo(e.x + Math.cos(u.tellA) * (80 + f * 320), e.y + Math.sin(u.tellA) * (80 + f * 320));
+        c.stroke();
+      }
       if (u.elite) {
         // elite bracket tag
         const r = u.r + 7;
@@ -548,13 +560,32 @@ export class Renderer {
 
   private drawUnitGlow(g: Game): void {
     for (const u of g.units) {
-      if (u.dead || u.delay > 0 || u.flash <= 0) continue;
+      if (u.dead || u.delay > 0) continue;
+      if (u.tellT > 0) {
+        const f = 1 - u.tellT / TELL_TIME;
+        this.glow(this.glowR, u.e.x, u.e.y, u.e.size * (0.6 + f * 0.8), 0.35 + f * 0.6);
+      }
+      if (u.flash <= 0) continue;
       const e = u.e;
       const s = u.state === U_BOSS ? u.r * 2 : e.size * 0.9;
       this.glow(this.glowW, e.x, e.y, s, (u.flash / 0.08) * (u.state === U_BOSS ? 0.25 : 0.5));
     }
     const bs = g.bs;
     const b = g.boss;
+    if (bs && b && bs.attack && bs.atkT < bs.windup) {
+      // boss attack tell: core flare + aim line at the player
+      const c = this.ctx;
+      const f = bs.atkT / Math.max(0.01, bs.windup);
+      this.glow(this.glowR, b.e.x, b.e.y, b.r * (1.5 + f * 1.5), 0.4 + f * 0.5);
+      c.globalAlpha = 0.3 + f * 0.6;
+      c.strokeStyle = CORE;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(b.e.x, b.e.y);
+      c.lineTo(g.px, g.py);
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     if (bs && b && bs.inv > 0) {
       const c = this.ctx;
       c.globalAlpha = 0.5 + 0.3 * Math.sin(g.time * 30);
@@ -1056,19 +1087,36 @@ export class Renderer {
     const cx = wide ? (fl + fr) / 2 : W / 2;
     if (r) {
       const sec = SECTORS[r.sector];
-      this.label(`SECTOR ${r.sector + 1} // ${sec.name}`, cx, pad + 12, 'center', DIM, 9);
-      c.font = `700 ${small ? 14 : 17}px ${FONT_H}`;
-      c.textAlign = 'center';
-      c.fillStyle = g.isBoss ? CORE : ORANGE;
-      c.letterSpacing = '3px';
-      c.fillText(g.isBoss ? 'CORE BREACH' : `WAVE ${r.combatInSector}${g.waveElite ? ' // ELITE' : ''}`, cx, pad + (small ? 30 : 33));
-      c.letterSpacing = '0px';
+      const nW = sec.waves.length;
+      const cur = g.isBoss ? nW : Math.min(nW - 1, r.waveInSector);
+      this.label(
+        `SECTOR ${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `WAVE ${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`,
+        cx,
+        pad + 12,
+        'center',
+        g.isBoss ? CORE : WHITE,
+        small ? 8 : 9,
+      );
+      // pips: waves then the boss
+      const pw = small ? 16 : 22;
+      const gap = 4;
+      const total = (nW + 1) * pw + nW * gap + 8;
+      let x = cx - total / 2;
+      for (let i = 0; i <= nW; i++) {
+        const boss = i === nW;
+        const done = i < cur;
+        const now = i === cur;
+        if (boss) x += 8;
+        c.fillStyle = done ? ORANGE : now ? (Math.sin(g.time * 6) > -0.3 ? WHITE : ORANGE) : 'rgba(240,126,65,0.18)';
+        c.fillRect(x, pad + 19, pw, boss ? 5 : 3);
+        x += pw + gap;
+      }
     }
     const b = g.boss;
     const bs = g.bs;
     if (b && bs && !b.dead) {
       const w = Math.min(420, (wide ? fr - fl : W) - 60);
-      const y = pad + (small ? 46 : 52);
+      const y = pad + (small ? 40 : 44);
       this.label(`${bs.def.name} // ${bs.def.title}`, cx, y, 'center', CORE, 9);
       c.fillStyle = 'rgba(255,90,42,0.15)';
       c.fillRect(cx - w / 2, y + 6, w, 5);
@@ -1176,25 +1224,41 @@ export class Renderer {
       }
       c.globalAlpha = 1;
       if (r && r.build.length) {
-        this.label('// BUILD', R - 8, H * 0.42 - 18, 'right', ORANGE, 9);
-        let ix = 0;
+        let y = H * 0.3;
+        this.label('// BUILD', R - 8, y - 16, 'right', ORANGE, 9);
         for (const bu of r.build) {
-          const p = this.icon(bu.id);
-          if (!p) continue;
-          const col2 = ix % 5;
-          const row2 = Math.floor(ix / 5);
-          const x = R - 8 - 30 * (5 - col2);
-          const y = H * 0.42 + row2 * 30 - 6;
           const def = UPGRADE_BY_ID[bu.id];
-          c.save();
-          c.translate(x + 2, y);
-          c.scale(0.95, 0.95);
-          c.strokeStyle = def.rarity === 'corrupted' ? CORE : def.rarity === 'rare' ? ORANGE : '#9a9aa2';
-          c.lineWidth = 1.4;
-          c.stroke(p);
-          c.restore();
-          if (bu.stacks > 1) this.label(`${bu.stacks}`, x + 28, y + 24, 'right', WHITE, 8);
-          ix++;
+          if (!def) continue;
+          const col = def.rarity === 'corrupted' ? CORE : def.rarity === 'rare' ? ORANGE : '#b4b4bc';
+          const p = this.icon(bu.id);
+          if (p) {
+            c.save();
+            c.translate(R - 186, y - 10);
+            c.scale(0.55, 0.55);
+            c.strokeStyle = col;
+            c.lineWidth = 2;
+            c.stroke(p);
+            c.restore();
+          }
+          c.font = `500 9px ${FONT_UI}`;
+          c.textAlign = 'left';
+          c.fillStyle = col;
+          c.fillText(`${def.name}${bu.stacks > 1 ? ` x${bu.stacks}` : ''}`.slice(0, 26), R - 170, y);
+          y += 15;
+          if (y > H * 0.78) break;
+        }
+        const syn = SYNERGIES.filter((x) => g.syn.has(x.id));
+        if (syn.length) {
+          y += 6;
+          this.label('// SYNERGY', R - 8, y, 'right', ORANGE, 9);
+          y += 14;
+          for (const sd of syn) {
+            c.font = `500 9px ${FONT_UI}`;
+            c.textAlign = 'left';
+            c.fillStyle = WHITE;
+            c.fillText(sd.name, R - 186, y);
+            y += 14;
+          }
         }
       }
     }

@@ -10,10 +10,11 @@ import { Game } from './cybergame/engine';
 import { Renderer } from './cybergame/render';
 import { Sfx } from './cybergame/audio';
 import { loadAutoFire, loadBest, loadMuted, saveAutoFire, saveMuted } from './cybergame/storage';
-import type { MapNode, NodeType, Phase, RunSummary } from './cybergame/types';
+import type { NodeType, Phase, RunSummary } from './cybergame/types';
 import { RARITY_LABEL, SYNERGIES, UPGRADE_BY_ID, computeSynergies } from './cybergame/content/upgrades';
+import type { OwnedUpgrade } from './cybergame/types';
 import type { UpgradeDef } from './cybergame/content/upgrades';
-import { NODE_INFO } from './cybergame/content/nodemap';
+import { ROUTE_INFO } from './cybergame/content/routes';
 import { SECTORS } from './cybergame/content/sectors';
 import { parseSeed } from './cybergame/rng';
 
@@ -82,6 +83,86 @@ const rarityFrame = (r: UpgradeDef['rarity']): CSSProperties => {
     boxShadow: '3px 0 0 rgba(240,126,65,0.55), -2px 2px 0 rgba(255,90,42,0.35)',
     clipPath: 'polygon(0 0, 62% 0, 64% 3%, 100% 3%, 100% 70%, 98% 72%, 98% 100%, 30% 100%, 28% 97%, 0 97%)',
   };
+};
+
+/** SECTOR n/3 · WAVE k/5 -> BOSS, as labelled pips. */
+const SectorProgress = ({ sector, wave, boss }: { sector: number; wave: number; boss: boolean }) => {
+  const sec = SECTORS[sector];
+  const n = sec.waves.length;
+  const cur = boss ? n : Math.min(n, wave);
+  return (
+    <div style={fontUi}>
+      <div className="text-[10px] tracking-[0.25em] text-neutral-400">
+        SECTOR {sector + 1}/{SECTORS.length} · {sec.name} · {boss || wave >= n ? 'BOSS NEXT' : `WAVE ${wave + 1}/${n}`} {'->'} BOSS
+      </div>
+      <div className="mt-2 flex items-center gap-1">
+        {Array.from({ length: n }, (_, i) => (
+          <span key={i} className="h-1.5 flex-1" style={{ background: i < cur ? ORANGE : i === cur ? WHITE : 'rgba(240,126,65,0.18)' }} title={`Wave ${i + 1}`} />
+        ))}
+        <span className="ml-1 text-[9px] tracking-[0.2em] px-1.5 py-0.5" style={{ border: `1px solid ${cur >= n ? CORE : 'rgba(255,90,42,0.4)'}`, color: cur >= n ? CORE : '#8a8a92' }}>
+          BOSS
+        </span>
+      </div>
+    </div>
+  );
+};
+
+/** Owned upgrades by name + effect, plus active synergies explained. */
+const BuildList = ({ build, syn, compact }: { build: OwnedUpgrade[]; syn: ReadonlySet<string>; compact?: boolean }) => {
+  const active = SYNERGIES.filter((x) => syn.has(x.id));
+  return (
+    <div className="text-left" style={fontUi}>
+      <div className="text-[10px] tracking-[0.3em]" style={{ color: ORANGE }}>
+        // YOUR BUILD
+      </div>
+      {build.length === 0 ? (
+        <div className="mt-2 text-[11px] text-neutral-500">No modules yet. You pick one after every wave.</div>
+      ) : (
+        <ul className="mt-2 space-y-2">
+          {build.map((b) => {
+            const def = UPGRADE_BY_ID[b.id];
+            if (!def) return null;
+            return (
+              <li key={b.id} className="flex gap-2 items-start">
+                <span className="shrink-0 mt-0.5">
+                  <UpgradeIcon id={b.id} size={18} />
+                </span>
+                <span className="min-w-0">
+                  <span className="text-[11px] tracking-[0.08em]" style={{ color: WHITE }}>
+                    {def.name}
+                    {b.stacks > 1 ? ` x${b.stacks}` : ''}
+                  </span>
+                  <span className="ml-2 text-[9px] tracking-[0.2em]" style={{ color: def.rarity === 'corrupted' ? CORE : def.rarity === 'rare' ? ORANGE : '#8a8a92' }}>
+                    {RARITY_LABEL[def.rarity]}
+                  </span>
+                  {!compact && (
+                    <span className="block text-[10px] text-neutral-400 leading-snug">
+                      {def.desc}
+                      {def.drawback && <span style={{ color: CORE }}> Drawback: {def.drawback}</span>}
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {active.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[10px] tracking-[0.3em]" style={{ color: ORANGE }}>
+            // ACTIVE SYNERGIES
+          </div>
+          <ul className="mt-1 space-y-1">
+            {active.map((x) => (
+              <li key={x.id} className="text-[10px] text-neutral-300 leading-snug">
+                <span style={{ color: WHITE }}>{x.name}</span> - {x.desc}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const Stat = ({ label, value, accent }: { label: string; value: string; accent?: boolean }) => (
@@ -166,6 +247,7 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
       loadBest(),
     );
     game.autoFire = loadAutoFire();
+    game.debug = import.meta.env.DEV;
     try {
       game.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     } catch {
@@ -302,11 +384,9 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
             startRun();
           } else if (e.code === 'Escape') onCloseRef.current();
           return;
-        case 'map': {
-          const reach = game.reachable();
-          if (digit >= 1 && digit <= reach.length) game.chooseNode(reach[digit - 1]);
+        case 'map':
+          if (digit >= 1 && digit <= 3) game.chooseRoute(digit - 1);
           return;
-        }
         case 'pick':
           if (digit >= 1 && digit <= 3) game.chooseUpgrade(digit - 1);
           else if (e.code === 'KeyS' || digit === 0) game.chooseUpgrade(-1);
@@ -368,114 +448,74 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
   const showHeaderRun = phase !== 'menu' && phase !== 'summary';
 
   // ------------------------------------------------------------ overlays
-  const renderMap = () => {
+  const renderRoutes = () => {
     if (!g || !run) return null;
-    const map = run.maps[run.sector];
-    const reach = g.reachable();
     const sec = SECTORS[run.sector];
-    const rowsAll: MapNode[][] = [...map.rows, [map.boss]];
-    const nRows = rowsAll.length;
-    const yOf = (row: number) => 92 - (row / (nRows - 1)) * 84;
-    const lines: ReactNode[] = [];
-    rowsAll.forEach((row) =>
-      row.forEach((n) =>
-        n.next.forEach((id) => {
-          const m = rowsAll.flat().find((x) => x.id === id);
-          if (!m) return;
-          const active = run.current?.id === n.id && reach.includes(m.id);
-          const travelled = n.visited && m.visited;
-          lines.push(
-            <line
-              key={`${n.id}-${id}`}
-              x1={n.x * 100}
-              y1={yOf(n.row)}
-              x2={m.x * 100}
-              y2={yOf(m.row)}
-              stroke={travelled ? ORANGE : active ? 'rgba(240,126,65,0.8)' : 'rgba(150,150,160,0.22)'}
-              strokeWidth={travelled || active ? 2 : 1}
-              vectorEffect="non-scaling-stroke"
-            />,
-          );
-        }),
-      ),
-    );
     const hpPct = Math.round((g.hp / g.stats.maxHp) * 100);
+    const bossStep = run.waveInSector >= sec.waves.length;
     return (
-      <motion.div key="map" {...fade} transition={{ duration: 0.25 }} className="absolute inset-0 overflow-y-auto flex" style={{ background: 'rgba(5,5,6,0.82)' }}>
-        <div className="m-auto w-full max-w-4xl px-3 sm:px-6 py-4 flex flex-col md:flex-row gap-4 md:gap-8 items-stretch">
-          <div className="md:w-64 shrink-0 text-left" style={fontUi}>
-            <div className="text-[10px] tracking-[0.35em]" style={{ color: ORANGE }}>
-              // SECTOR {run.sector + 1} OF {SECTORS.length}
-            </div>
-            <h3 className="mt-2 text-2xl sm:text-3xl tracking-[0.12em]" style={{ ...fontH, color: WHITE }}>
-              {sec.name}
+      <motion.div key="routes" {...fade} transition={{ duration: 0.25 }} className="absolute inset-0 overflow-y-auto flex" style={{ background: 'rgba(5,5,6,0.86)' }}>
+        <div className="m-auto w-full max-w-5xl px-3 sm:px-6 py-5 flex flex-col lg:flex-row gap-5 lg:gap-8">
+          <div className="flex-1 min-w-0">
+            <SectorProgress sector={run.sector} wave={run.waveInSector} boss={false} />
+            <h3 className="mt-4 text-xl sm:text-3xl tracking-[0.14em]" style={{ ...fontH, color: WHITE }}>
+              CHOOSE YOUR ROUTE
             </h3>
-            <div className="text-[11px] tracking-[0.2em] text-neutral-500 mt-1">{sec.subtitle}</div>
-            <p className="mt-3 text-xs text-neutral-400 leading-relaxed">{sec.intro}</p>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <Stat label="INTEGRITY" value={`${hpPct}%`} accent={hpPct > 30} />
-              <Stat label="SCORE" value={g.score.toLocaleString('en-US')} />
-            </div>
-            {run.build.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1">
-                {run.build.map((b) => (
-                  <span key={b.id} title={`${UPGRADE_BY_ID[b.id]?.name ?? b.id}${b.stacks > 1 ? ` x${b.stacks}` : ''}`} className="relative border border-neutral-800 p-0.5">
-                    <UpgradeIcon id={b.id} size={20} />
-                    {b.stacks > 1 && <span className="absolute -bottom-1 -right-1 text-[8px] text-white">{b.stacks}</span>}
-                  </span>
-                ))}
-              </div>
-            )}
+            <p className="mt-1 text-xs text-neutral-400" style={fontUi}>
+              {bossStep
+                ? 'All waves of this sector are purged. The sector core is next.'
+                : `Pick what happens before the next wave. ${sec.name}: ${sec.intro}`}
+            </p>
             {run.toast && (
-              <div className="mt-4 text-[11px] leading-relaxed border-l-2 pl-2" style={{ borderColor: ORANGE, color: WHITE }}>
+              <div className="mt-3 text-[11px] leading-relaxed border-l-2 pl-2" style={{ ...fontUi, borderColor: ORANGE, color: WHITE }}>
                 {run.toast}
               </div>
             )}
-            <div className="mt-4 text-[10px] tracking-[0.2em] text-neutral-500">SELECT A NODE // KEYS 1-{reach.length}</div>
-          </div>
-          <div className="relative flex-1 min-h-[360px] md:min-h-[480px]" style={{ border: '1px solid rgba(240,126,65,0.15)', background: 'rgba(7,7,8,0.6)' }}>
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-              {lines}
-            </svg>
-            {rowsAll.flat().map((n) => {
-              const idx = reach.indexOf(n.id);
-              const can = idx >= 0;
-              const isCur = run.current?.id === n.id;
-              const col = can ? ORANGE : n.visited ? 'rgba(240,126,65,0.55)' : '#55555c';
-              const boss = n.type === 'boss';
-              return (
-                <button
-                  key={n.id}
-                  type="button"
-                  disabled={!can}
-                  onClick={() => g.chooseNode(n.id)}
-                  className={`absolute flex flex-col items-center -translate-x-1/2 -translate-y-1/2 focus:outline-none group ${can ? 'cursor-pointer' : 'cursor-default'}`}
-                  style={{ left: `${n.x * 100}%`, top: `${yOf(n.row)}%` }}
-                  aria-label={`${NODE_INFO[n.type].label}${can ? ' (available)' : ''}`}
-                  title={`${NODE_INFO[n.type].label}: ${NODE_INFO[n.type].desc}`}
-                >
-                  <span
-                    className={`flex items-center justify-center ${can ? 'group-hover:bg-[rgba(240,126,65,0.2)] group-focus-visible:ring-1 group-focus-visible:ring-white' : ''}`}
-                    style={{
-                      width: boss ? 48 : 38,
-                      height: boss ? 48 : 38,
-                      transform: 'rotate(45deg)',
-                      border: `${can ? 1.5 : 1}px solid ${col}`,
-                      background: isCur ? 'rgba(240,126,65,0.25)' : n.visited ? 'rgba(240,126,65,0.08)' : '#09090a',
-                      boxShadow: can ? '0 0 0 3px rgba(240,126,65,0.12)' : undefined,
-                    }}
+            <div className={`mt-5 grid grid-cols-1 gap-3 sm:gap-4 ${run.routes.length >= 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+              {run.routes.map((t, i) => {
+                const info = ROUTE_INFO[t];
+                const danger = t === 'elite' || t === 'boss' || t === 'anomaly';
+                const name = bossStep && t === 'repair' ? 'REPAIR, THEN CORE' : info.name;
+                const line = bossStep && t === 'repair' ? 'Restore 40% integrity and refill shields, then engage the sector core.' : info.line;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => g.chooseRoute(i)}
+                    className="text-left p-4 sm:p-5 transition-transform duration-150 hover:-translate-y-1 focus:outline-none focus-visible:ring-1 focus-visible:ring-white"
+                    style={{ ...fontUi, border: `1.5px solid ${danger ? 'rgba(255,90,42,0.8)' : 'rgba(240,126,65,0.6)'}`, background: 'rgba(10,9,9,0.94)' }}
                   >
-                    <span style={{ transform: 'rotate(-45deg)' }}>
-                      <NodeGlyph type={n.type} color={can ? WHITE : col} />
-                    </span>
-                  </span>
-                  <span className="mt-2 text-[9px] tracking-[0.2em] whitespace-nowrap" style={{ ...fontUi, color: can ? WHITE : '#6a6a72' }}>
-                    {can ? `${idx + 1} ` : ''}
-                    {NODE_INFO[n.type].short}
-                  </span>
-                </button>
-              );
-            })}
+                    <div className="flex items-start justify-between">
+                      <span className="p-2" style={{ border: '1px solid rgba(240,126,65,0.35)' }}>
+                        <NodeGlyph type={t} color={danger ? CORE : ORANGE} />
+                      </span>
+                      <span className="text-[10px] tracking-[0.25em] text-neutral-500">KEY {i + 1}</span>
+                    </div>
+                    <div className="mt-3 text-sm sm:text-base tracking-[0.12em]" style={{ ...fontH, color: WHITE }}>
+                      {name}
+                    </div>
+                    <p className="mt-2 text-xs text-neutral-300 leading-relaxed">{line}</p>
+                    <div className="mt-3 text-[10px] leading-relaxed">
+                      <div>
+                        <span style={{ color: ORANGE }}>REWARD </span>
+                        <span className="text-neutral-300">{bossStep && t === 'repair' ? '+40% integrity' : info.reward}</span>
+                      </div>
+                      <div>
+                        <span style={{ color: CORE }}>RISK </span>
+                        <span className="text-neutral-300">{info.risk}</span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="lg:w-72 shrink-0 border border-neutral-800 p-4" style={{ background: 'rgba(7,7,8,0.8)' }}>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <Stat label="INTEGRITY" value={`${hpPct}%`} accent={hpPct > 30} />
+              <Stat label="SCORE" value={g.score.toLocaleString('en-US')} />
+            </div>
+            <BuildList build={run.build} syn={g.syn} />
           </div>
         </div>
       </motion.div>
@@ -746,36 +786,28 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                         You are the antivirus: a human mind wired into a network a rogue AI is taking apart. Breach three sectors, choose your path, build your firewall, and terminate the core.
                       </p>
 
-                      <div className="mt-6 grid grid-cols-2 gap-px text-left" style={{ ...fontUi, background: 'rgba(240,126,65,0.15)' }}>
+                      <ol className="mt-6 text-left border border-neutral-800 divide-y divide-neutral-800" style={{ ...fontUi, background: 'rgba(7,7,8,0.85)' }}>
                         {[
-                          ['MOVE', 'Mouse / drag / WASD / arrows'],
-                          ['FIRE', autoFire ? 'Auto-fire ON (F to toggle)' : 'Hold click / Space (F: auto)'],
-                          ['PULSE / DASH', 'E or right click / Shift (when installed)'],
-                          ['PAUSE', 'P / Esc  //  M mute'],
-                        ].map(([k, v]) => (
-                          <div key={k} className="px-3 py-2" style={{ background: '#070708' }}>
-                            <div className="text-[10px] tracking-[0.25em]" style={{ color: ORANGE }}>
-                              {k}
-                            </div>
-                            <div className="text-[11px] sm:text-xs text-neutral-300 mt-0.5">{v}</div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <ol className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2 text-left" style={fontUi}>
-                        {[
-                          ['01 PATH', 'Pick nodes on the sector map: fights, elites, repairs, caches, anomalies.'],
-                          ['02 BUILD', 'After each wave install 1 of 3 modules. Corrupted ones bite back.'],
-                          ['03 BREACH', 'Shoot enemy shots down. Shoot leeches off. Kill the sector core.'],
-                        ].map(([k, v]) => (
-                          <li key={k} className="border border-neutral-800 px-3 py-2" style={{ background: 'rgba(7,7,8,0.8)' }}>
-                            <div className="text-[10px] tracking-[0.2em]" style={{ color: WHITE }}>
-                              {k}
-                            </div>
-                            <div className="text-[10px] text-neutral-500 leading-snug mt-1">{v}</div>
+                          ['01', 'MOVE / SHOOT / PULSE', `Mouse, drag or WASD to move in the lower field. ${autoFire ? 'Auto-fire is on (F toggles).' : 'Hold click or Space to fire (F: auto).'} E / right click fires the EMP pulse once installed.`],
+                          ['02', 'UPGRADE AFTER EVERY WAVE', 'Install 1 of 3 modules. Rare ones are strong; corrupted ones are stronger but bite back.'],
+                          ['03', 'CHOOSE YOUR ROUTE', 'Then pick the next route: standard wave, elite breach, repair, cache or anomaly. Five waves, then the sector core.'],
+                        ].map(([n, k, v]) => (
+                          <li key={n} className="flex gap-3 px-3 py-2.5">
+                            <span className="text-[11px]" style={{ color: ORANGE }}>
+                              {n}
+                            </span>
+                            <span>
+                              <span className="block text-[11px] tracking-[0.2em]" style={{ color: WHITE }}>
+                                {k}
+                              </span>
+                              <span className="block text-[11px] text-neutral-400 leading-snug mt-0.5">{v}</span>
+                            </span>
                           </li>
                         ))}
                       </ol>
+                      <div className="mt-2 text-[10px] tracking-[0.2em] text-neutral-500" style={fontUi}>
+                        SHIFT DASH (WHEN INSTALLED) // P PAUSE // M MUTE
+                      </div>
 
                       <div className="mt-6 flex flex-col items-center gap-3">
                         <button
@@ -810,22 +842,28 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                   </motion.div>
                 )}
 
-                {phase === 'map' && renderMap()}
+                {phase === 'map' && renderRoutes()}
                 {phase === 'pick' && renderPick()}
                 {phase === 'anomaly' && renderAnomaly()}
 
                 {phase === 'paused' && (
-                  <motion.div key="paused" {...fade} transition={{ duration: 0.15 }} className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(5,5,6,0.72)' }}>
-                    <div className="text-center px-4">
+                  <motion.div key="paused" {...fade} transition={{ duration: 0.15 }} className="absolute inset-0 flex items-center justify-center overflow-y-auto" style={{ background: 'rgba(5,5,6,0.8)' }}>
+                    <div className="text-center px-4 py-4 w-full">
                       <div className="text-[10px] tracking-[0.35em] text-neutral-500" style={fontUi}>
                         // PROCESS SUSPENDED
                       </div>
                       <div className="mt-2 text-3xl sm:text-4xl tracking-[0.2em]" style={{ ...fontH, color: WHITE }}>
                         PAUSED
                       </div>
-                      {run && (
-                        <div className="mt-3 text-[10px] tracking-[0.25em] text-neutral-500" style={fontUi}>
-                          SECTOR {run.sector + 1} // {SECTORS[run.sector].name} // SEED {run.seedStr}
+                      {run && g && (
+                        <div className="mt-4 text-left max-w-md mx-auto max-h-[45vh] overflow-y-auto border border-neutral-800 p-3" style={{ background: 'rgba(7,7,8,0.85)' }}>
+                          <SectorProgress sector={run.sector} wave={run.waveInSector} boss={g.isBoss} />
+                          <div className="mt-3">
+                            <BuildList build={run.build} syn={g.syn} />
+                          </div>
+                          <div className="mt-3 text-[10px] tracking-[0.25em] text-neutral-500" style={fontUi}>
+                            SEED {run.seedStr}
+                          </div>
                         </div>
                       )}
                       <div className="mt-6 flex gap-3 justify-center">
