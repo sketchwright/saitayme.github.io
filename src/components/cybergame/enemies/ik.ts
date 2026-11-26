@@ -457,9 +457,16 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
     const dy = fy - L.hwy;
     const d = Math.hypot(dx, dy);
     const maxD = L.total * 0.97;
+    const minD = L.total * 0.32; // closer than this folds the segments onto themselves
     if (d > maxD) {
       fx = L.hwx + (dx / d) * maxD;
       fy = L.hwy + (dy / d) * maxD;
+    } else if (d < minD) {
+      // push out from the hip (outward side when the foot sits on the hip)
+      const ux = d > 1e-3 ? dx / d : -s * L.side;
+      const uy = d > 1e-3 ? dy / d : c * L.side;
+      fx = L.hwx + ux * minD;
+      fy = L.hwy + uy * minD;
     }
     solveLeg(L.j, L.len, L.n, L.hwx, L.hwy, fx, fy, -s * L.side, c * L.side, rig.bulge * (1 + L.lift * 0.6 + rig.collapse));
   }
