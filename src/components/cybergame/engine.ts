@@ -10,6 +10,7 @@ import {
   EnemyKind,
   Vec,
   bossCharge,
+  crawlerLunge,
   createEnemy,
   hurtEnemy,
   killEnemy,
@@ -244,6 +245,12 @@ export class Game {
   private waveClock = 0;
   private clusterSeq = 0;
   private fightBonus = false;
+  /** seconds since the last kill in this wave (stall safety valve) */
+  private sinceKill = 0;
+  stallPull = false;
+  /** debug counter: units pushed back up from beside / below the ship */
+  belowEvents = 0;
+
   latchedCount = 0;
   /** dev-only slow motion (backquote) */
   debug = false;
@@ -978,6 +985,7 @@ export class Game {
       pulseHit: -1,
       dead: false,
       life: 0,
+      belowT: 0,
     };
     this.units.push(u);
     return u;
@@ -1165,6 +1173,8 @@ export class Game {
     groups.sort((a, b) => a.at - b.at);
     this.groups = groups;
     this.groupIdx = 0;
+    this.sinceKill = 0;
+    this.stallPull = false;
     this.waveClock = 0;
     this.waveTotal = groups.reduce((a, g) => a + g.n, 0);
     this.waveActive = true;
@@ -1243,9 +1253,35 @@ export class Game {
             if (e.y > u.p3y || dp < 170) {
               u.state = U_HUNT;
               u.stateT = 0;
+              u.actT = rand(0.8, 2);
+            }
+          } else if (u.state === U_HUNT) {
+            if (e.mode !== 0) {
+              // freeze / lunge / recover run inside the module; then back off upward
+              if (e.mode === 3) {
+                u.state = U_RETREAT;
+                u.stateT = 0;
+              }
+            } else {
+              // hover in a band above the ship, inside its horizontal reach
+              u.actT -= dt;
+              const closing = u.actT <= 0;
+              const hx = clamp(this.px + Math.sin(u.t * 0.9 + u.id * 2.3) * (closing ? 12 : 80), 24, FW - 24);
+              const hy = Math.max(40, this.py - (closing ? 52 : 95 + (u.id % 3) * 22));
+              intent = this.goal(u, hx, hy, 84);
+              if (closing && Math.abs(e.x - this.px) < 30 && e.y < this.py - 30 && e.y > this.py - 80 && playing) {
+                // lunge straight down through the firing line
+                crawlerLunge(e);
+                u.actT = rand(1.6, 3);
+              } else if (closing && u.actT < -2.5) u.actT = rand(0.5, 1.2);
+            }
+          } else if (u.state === U_RETREAT) {
+            intent = this.goal(u, e.x, Math.max(40, this.py - 170), 84);
+            if (u.stateT > 1.1 && e.mode === 0) {
+              u.state = U_HUNT;
+              u.stateT = 0;
             }
           }
-          // U_HUNT: library stalk + lunge (no intent)
           break;
         }
         case 'sentinel': {
@@ -1256,6 +1292,9 @@ export class Game {
               u.stateT = 0;
               u.actT = rand(12, 18);
             }
+          } else if (u.state === U_RETREAT) {
+            u.state = U_ENTER;
+            u.gy = Math.min(u.gy, FH * 0.38);
           } else {
             u.actT -= dt;
             if (u.actT <= 0 && e.mode === 0) {
@@ -1303,7 +1342,7 @@ export class Game {
               if (playing) this.drain(dt * (6 + this.runSector() * 1.5));
             }
           } else if (u.state === U_RETREAT) {
-            intent = this.goal(u, e.x - (dxp / dp) * 200, Math.max(60, e.y - 160), 72);
+            intent = this.goal(u, e.x - (dxp / dp) * 120, Math.max(60, Math.min(e.y - 160, this.py - 170)), 79);
             if (u.stateT > 1.6) {
               u.state = U_HUNT;
               u.stateT = 0;
@@ -1330,6 +1369,13 @@ export class Game {
               u.gx = u.p3x;
               u.gy = u.p3y;
               u.actT = rand(2, 4);
+            }
+          } else if (u.state === U_RETREAT) {
+            intent = this.goal(u, e.x, Math.max(60, this.py - 220), 95);
+            if (u.stateT > 1.2) {
+              u.state = U_ACT;
+              u.stateT = 0;
+              u.gy = rand(70, FH * 0.35);
             }
           } else if (u.state === U_STRIKE) {
             // phased out and relocating next to the player (library-driven)
@@ -1360,8 +1406,8 @@ export class Game {
           const ax = FW / 2 + Math.sin(wc * 0.22 + u.cluster * 2.1) * FW * 0.3;
           const ay = FH * (0.24 + 0.12 * Math.sin(wc * 0.31 + u.cluster));
           const a = u.cidx * 2.09 + u.t * 0.35;
-          intent = this.goal(u, ax + Math.cos(a) * 38, ay + Math.sin(a) * 30, u.state === U_ENTER ? 70 : 55);
-          if (u.state === U_ENTER && this.onScreen(e, 12)) u.state = U_ACT;
+          intent = this.goal(u, ax + Math.cos(a) * 38, ay + Math.sin(a) * 30, u.state === U_ENTER || u.state === U_RETREAT ? 75 : 55);
+          if ((u.state === U_ENTER && this.onScreen(e, 12)) || (u.state === U_RETREAT && u.stateT > 1.2)) u.state = U_ACT;
           if (playing && this.runSector() > 0 && u.state === U_ACT) {
             u.shotT -= dt;
             if (u.shotT <= 0 && this.visibleForFire(u)) {
@@ -1373,7 +1419,13 @@ export class Game {
         }
         case 'fragment': {
           u.life -= dt;
-          if (u.life <= 0) {
+          if (u.state === U_RETREAT) {
+            intent = this.goal(u, e.x, Math.max(40, this.py - 180), 200);
+            if (u.stateT > 0.9) {
+              u.state = U_FREE;
+              u.stateT = 0;
+            }
+          } else if (u.life <= 0) {
             intentV.x = 0;
             intentV.y = 220;
             intent = intentV;
@@ -1384,7 +1436,21 @@ export class Game {
         default:
           break;
       }
+      // safety valve: wave stalled with no kills -> draw everything to the upper middle
+      if (this.stallPull && playing && u.state !== U_LATCH && u.state !== U_STRIKE && e.kind !== 'sentinel') {
+        intent = this.goal(u, FW / 2 + Math.sin(u.id * 1.7) * FW * 0.3, FH * 0.25 + Math.cos(u.id * 2.1) * 40, e.kind === 'fragment' ? 200 : 90);
+      }
       updateEnemy(e, dt, target, intent);
+      // nothing may idle beside / below the ship: after 1 s it backs off upward
+      if (playing && e.y > this.py - 20 && u.state !== U_LATCH && u.state !== U_STRIKE && u.state !== U_RETREAT && !(e.kind === 'fragment' && u.life <= 0)) {
+        u.belowT += dt;
+        if (u.belowT > 1 && (e.kind !== 'crawler' || e.mode === 0) && (e.kind !== 'leech' || e.mode === 0)) {
+          u.belowT = 0;
+          u.state = U_RETREAT;
+          u.stateT = 0;
+          this.belowEvents++;
+        }
+      } else u.belowT = 0;
 
       // shot tells
       if (u.tellT > 0) {
@@ -1455,6 +1521,7 @@ export class Game {
       pulseHit: -1,
       dead: false,
       life: 6,
+      belowT: 0,
     };
   }
 
@@ -1462,6 +1529,11 @@ export class Game {
     if (!this.waveActive || this.clearT >= 0) return;
     const sec = this.sector;
     if (!this.isBoss) {
+      this.sinceKill += dt;
+      if (this.sinceKill > 12 && !this.stallPull && this.countAlive() > 0) {
+        this.stallPull = true;
+        this.pushLog('stall: purge sweep');
+      }
       this.waveClock += dt;
       let alive = this.countAlive();
       while (this.groupIdx < this.groups.length) {
@@ -1621,7 +1693,7 @@ export class Game {
       this.say(bs.phase === 1 ? 'SHELL FRACTURED' : 'CORE EXPOSED', `${def.name} // PHASE ${bs.phase + 1}`, true, 2.2);
       this.ev.sound('boss');
       this.pushLog(`${def.name.toLowerCase()} phase ${bs.phase + 1}`);
-      this.bossSummon(u, 2 + bs.phase);
+      this.bossSummon(u, 1 + bs.phase);
       return;
     }
 
@@ -1761,7 +1833,7 @@ export class Game {
       case 'summon':
         if (bs.atkStep === 0) {
           bs.atkStep = 1;
-          this.bossSummon(u, 3 + ph * 2);
+          this.bossSummon(u, 2 + ph);
         }
         if (t > 0.8) end(1.4);
         break;
@@ -1787,9 +1859,14 @@ export class Game {
     const def = this.bs?.def;
     if (!def) return;
     const living = this.countAlive() - 1;
-    const count = Math.min(n, 12 - living);
+    const count = Math.min(n, 6 - living);
+    let sentinels = 0;
+    for (const x of this.units) if (!x.dead && x.state !== U_DYING && x.kind === 'sentinel') sentinels++;
     for (let i = 0; i < count; i++) {
-      const kind = def.summon[(Math.random() * def.summon.length) | 0];
+      let kind = def.summon[(Math.random() * def.summon.length) | 0];
+      // stationary summons soak the player's fire; keep at most two around the boss
+      if (kind === 'sentinel' && sentinels >= 2) kind = 'crawler';
+      if (kind === 'sentinel') sentinels++;
       this.spawnGroup({ kind, n: 1, from: 'boss', at: 0, gap: 0 }, false, u.e.x, u.e.y);
     }
     if (count > 0) this.particle(P_HEX, u.e.x, u.e.y, 60, 0, 0.35, 16, C_ORANGE, 0);
@@ -1903,6 +1980,8 @@ export class Game {
     if (!byPlayer || this.dying >= 0) return;
     const r = this.run;
     if (r) r.kills++;
+    this.sinceKill = 0;
+    this.stallPull = false;
     this.combo++;
     if (r) r.maxCombo = Math.max(r.maxCombo, this.combo);
     this.comboT = this.stats.comboTime;
@@ -2344,7 +2423,19 @@ export class Game {
         for (let i = 0; i < st.drones; i++) {
           const [dx, dy] = this.dronePos(i);
           const crit = this.syn.has('droneCrit') && Math.random() < st.crit;
-          this.spawnBullet(dx, dy - 6, -Math.PI / 2, st.bulletSpeed * 0.95, st.dmg * 0.6 * (crit ? st.critMult : 1), 0, st.bulletSize * 0.75, st.homing * 0.6, crit, true);
+          let aim = -Math.PI / 2;
+          let bd = 170 * 170;
+          for (const u of this.units) {
+            if (!this.tangible(u) || u.e.y < this.py - 120) continue;
+            const ex = u.e.x - dx;
+            const ey = u.e.y - dy;
+            const d2 = ex * ex + ey * ey;
+            if (d2 < bd) {
+              bd = d2;
+              aim = Math.atan2(ey, ex);
+            }
+          }
+          this.spawnBullet(dx, dy - 6, aim, st.bulletSpeed * 0.95, st.dmg * 0.6 * (crit ? st.critMult : 1), 0, st.bulletSize * 0.75, st.homing * 0.6, crit, true);
         }
       }
     }

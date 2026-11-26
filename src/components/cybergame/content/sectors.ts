@@ -90,7 +90,7 @@ export const SECTORS: SectorDef[] = [
       name: 'WARDEN.EXE',
       title: 'PERIMETER INTELLIGENCE',
       size: 190,
-      hp: 520,
+      hp: 440,
       phases: [0.5],
       attacks: [
         ['fan', 'ring', 'summon', 'fan', 'sweep'],

@@ -208,6 +208,8 @@ export interface Unit {
   pulseHit: number;
   dead: boolean;
   life: number;
+  /** seconds spent beside / below the player */
+  belowT: number;
 }
 
 export const MAX_UNITS = 72;
