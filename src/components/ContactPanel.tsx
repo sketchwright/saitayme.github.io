@@ -42,7 +42,7 @@ const ContactPanel: React.FC<ContactPanelProps> = ({ compact = false }) => {
           <MdEmail size={iconSize} className="text-primary shrink-0" style={iconGlowStyle} />
           <span className={textClass}>{contact.email}</span>
           <button
-            className="ml-2 p-1 rounded bg-cyber-dark border border-primary hover:bg-primary/20 transition"
+            className="ml-2 p-1 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 inline-flex items-center justify-center rounded bg-cyber-dark border border-primary hover:bg-primary/20 transition"
             onClick={() => handleCopy(contact.email, 'email')}
             aria-label="Copy email"
           >
@@ -53,7 +53,7 @@ const ContactPanel: React.FC<ContactPanelProps> = ({ compact = false }) => {
           <MdPhone size={iconSize} className="text-primary shrink-0" style={iconGlowStyle} />
           <span className={textClass}>{contact.phone}</span>
           <button
-            className="ml-2 p-1 rounded bg-cyber-dark border border-primary hover:bg-primary/20 transition"
+            className="ml-2 p-1 min-w-[40px] min-h-[40px] md:min-w-0 md:min-h-0 inline-flex items-center justify-center rounded bg-cyber-dark border border-primary hover:bg-primary/20 transition"
             onClick={() => handleCopy(contact.phone, 'phone')}
             aria-label="Copy phone"
           >

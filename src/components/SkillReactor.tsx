@@ -296,7 +296,7 @@ export default function SkillReactor() {
               role="radio"
               aria-checked={mode === m}
               onClick={() => setMode(m)}
-              className={`px-3 py-1 border transition-colors ${mode === m ? 'bg-primary text-cyber-black border-primary' : 'text-gray-400 border-[#2e2e2e] hover:text-primary hover:border-primary/60'}`}
+              className={`px-3 py-1 min-h-[40px] min-w-[48px] border transition-colors ${mode === m ? 'bg-primary text-cyber-black border-primary' : 'text-gray-400 border-[#2e2e2e] hover:text-primary hover:border-primary/60'}`}
             >
               {m === 'eng' ? 'ENG' : m === 'mkt' ? 'MKT' : 'BOTH'}
             </button>
@@ -373,6 +373,7 @@ export default function SkillReactor() {
                   aria-label={s.label}
                   onFocus={() => setPanel(i)}
                 >
+                  <rect x={x - 26} y={y - 26} width={52} height={52} fill="transparent" />
                   <rect x={x - 5} y={y - 5} width={10} height={10} transform={s.side === 'grow' ? `rotate(45 ${x} ${y})` : undefined}
                     fill="#0a0a0a" stroke={on ? '#f4efe8' : '#5a5a5a'} strokeWidth="1" strokeDasharray={s.side === 'grow' ? '2 2' : undefined} />
                   <text ref={(el) => { labelsRef.current[i] = el; }} x={x} y={below ? y + 28 : y - 18} textAnchor="middle" className="font-mono" fontSize="10" letterSpacing="2" fill={on ? '#ffffff' : '#8a8a8a'}>
@@ -404,7 +405,7 @@ export default function SkillReactor() {
           <p className="font-mono text-sm text-gray-200 leading-snug min-h-[2.6rem]">
             <span className="text-primary">› </span>{fs.proof}
           </p>
-          <div className="grid grid-cols-4 gap-1.5 mt-5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-5">
             {SKILLS.map((s, i) => (
               <button
                 key={s.id}
@@ -412,7 +413,7 @@ export default function SkillReactor() {
                 onClick={() => setPanel(i)}
                 onMouseEnter={() => setHover(i)}
                 onMouseLeave={() => setHover(null)}
-                className={`text-[9px] font-mono tracking-wider px-1.5 py-1.5 border truncate transition-colors ${focus === i ? 'bg-primary text-cyber-black border-primary' : 'text-gray-400 border-[#2e2e2e] hover:text-primary hover:border-primary/60'}`}
+                className={`text-[10px] font-mono tracking-wider px-1.5 py-1.5 min-h-[40px] border truncate transition-colors ${focus === i ? 'bg-primary text-cyber-black border-primary' : 'text-gray-400 border-[#2e2e2e] hover:text-primary hover:border-primary/60'}`}
               >
                 {s.side === 'build' ? '■ ' : '◆ '}{s.short}
               </button>

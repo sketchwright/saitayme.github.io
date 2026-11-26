@@ -39,7 +39,7 @@ const Navbar = () => {
       <div className="cyber-container">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link to="/" className="flex items-center space-x-2">
+          <Link to="/" className="flex items-center space-x-2 min-h-[40px] min-w-[40px]">
             <motion.span
               className="text-2xl font-cyber text-primary neon-text"
               whileHover={{ scale: 1.05 }}
@@ -77,7 +77,7 @@ const Navbar = () => {
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setIsOpen(!isOpen)}
-            className="md:hidden text-gray-400 hover:text-primary"
+            className="md:hidden text-gray-400 hover:text-primary p-2 -mr-2"
           >
             {isOpen ? <FaTimes size={24} /> : <FaBars size={24} />}
           </motion.button>

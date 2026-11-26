@@ -1098,14 +1098,19 @@ export class Renderer {
     // sector / wave
     const r = g.run;
     const cx = wide ? (fl + fr) / 2 : W / 2;
+    // On phones the corner blocks take the top row, so the centre header moves below them
+    const narrow = !wide && W < 560;
+    const top = narrow ? pad + 70 : pad;
     if (r) {
       const sec = SECTORS[r.sector];
       const nW = sec.waves.length;
       const cur = g.isBoss ? nW : Math.min(nW - 1, r.waveInSector);
       this.label(
-        `SECTOR ${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `WAVE ${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`,
+        narrow
+          ? `S${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `W${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`
+          : `SECTOR ${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `WAVE ${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`,
         cx,
-        pad + 12,
+        top + 12,
         'center',
         g.isBoss ? CORE : WHITE,
         small ? 8 : 9,
@@ -1121,7 +1126,7 @@ export class Renderer {
         const now = i === cur;
         if (boss) x += 8;
         c.fillStyle = done ? ORANGE : now ? (Math.sin(g.time * 6) > -0.3 ? WHITE : ORANGE) : 'rgba(240,126,65,0.18)';
-        c.fillRect(x, pad + 19, pw, boss ? 5 : 3);
+        c.fillRect(x, top + 19, pw, boss ? 5 : 3);
         x += pw + gap;
       }
     }
@@ -1129,7 +1134,7 @@ export class Renderer {
     const bs = g.bs;
     if (b && bs && !b.dead) {
       const w = Math.min(420, (wide ? fr - fl : W) - 60);
-      const y = pad + (small ? 40 : 44);
+      const y = top + (small ? 40 : 44);
       const exposed = bs.vuln > 0;
       this.label(exposed ? `CORE EXPOSED // x1.5 DAMAGE // ${bs.vuln.toFixed(1)}s` : `${bs.def.name} // ${bs.def.title}`, cx, y, 'center', exposed ? (Math.sin(g.time * 10) > 0 ? WHITE : ORANGE) : CORE, 9);
       c.fillStyle = 'rgba(255,90,42,0.15)';
@@ -1146,7 +1151,7 @@ export class Renderer {
       for (const u of g.units) if (!u.dead) alive++;
       const bw = small ? 90 : 140;
       const frac = g.waveTotal > 0 ? Math.min(1, alive / g.waveTotal) : 0;
-      const y = pad + (small ? 40 : 44);
+      const y = top + (small ? 40 : 44);
       c.fillStyle = 'rgba(240,126,65,0.15)';
       c.fillRect(cx - bw / 2, y, bw, 2);
       c.fillStyle = ORANGE;

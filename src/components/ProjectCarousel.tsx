@@ -151,7 +151,7 @@ export default function ProjectCarousel() {
       <div className="cyber-container mt-6 text-center">
         <Link
           to="/projects"
-          className="text-sm font-mono text-primary/80 hover:text-primary transition-colors"
+          className="inline-block py-3 px-2 text-sm font-mono text-primary/80 hover:text-primary transition-colors"
         >
           View all projects →
         </Link>

@@ -82,14 +82,14 @@ function QuoteCard({ item, index }: { item: Recommendation; index: number }) {
               href={item.letterUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/50 text-primary/90 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors rounded"
+              className="inline-flex items-center px-3 py-1.5 min-h-[40px] text-xs font-mono border border-primary/50 text-primary/90 hover:bg-primary/10 hover:border-primary hover:text-primary transition-colors rounded"
             >
               Read PDF
             </a>
             <a
               href={item.letterUrl}
               download
-              className="inline-flex items-center px-3 py-1.5 text-xs font-mono border border-primary/30 text-gray-300 hover:border-primary/60 hover:text-white hover:bg-cyber-black/50 transition-colors rounded"
+              className="inline-flex items-center px-3 py-1.5 min-h-[40px] text-xs font-mono border border-primary/30 text-gray-300 hover:border-primary/60 hover:text-white hover:bg-cyber-black/50 transition-colors rounded"
             >
               Download PDF
             </a>

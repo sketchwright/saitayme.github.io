@@ -211,7 +211,7 @@ const Projects = () => {
 
         <p className="mb-16 text-center font-mono text-xs text-gray-500">
           Older Unity tools and game jams →{' '}
-          <a href="https://github.com/sketchwright" target="_blank" rel="noopener noreferrer" className="text-primary/80 hover:text-primary underline underline-offset-4">GitHub</a>
+          <a href="https://github.com/sketchwright" target="_blank" rel="noopener noreferrer" className="inline-block py-3 px-1 text-primary/80 hover:text-primary underline underline-offset-4">GitHub</a>
         </p>
 
         {!hasAny && (

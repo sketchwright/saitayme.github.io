@@ -87,7 +87,7 @@ function LinkChip({ link, big = false }: { link: ChannelLink; big?: boolean }) {
       href={link.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`group inline-flex items-center gap-3 rounded-lg border border-primary/30 bg-cyber-black/70 hover:border-primary hover:bg-primary/10 hover:shadow-[0_0_20px_rgba(240,126,65,0.2)] transition-all ${big ? 'px-5 py-4' : 'px-3 py-1.5'}`}
+      className={`group inline-flex items-center gap-3 rounded-lg border border-primary/30 bg-cyber-black/70 hover:border-primary hover:bg-primary/10 hover:shadow-[0_0_20px_rgba(240,126,65,0.2)] transition-all ${big ? 'px-5 py-4' : 'px-3 py-1.5 min-h-[40px]'}`}
     >
       <Icon className={`text-primary ${big ? 'text-2xl' : 'text-sm'}`} />
       <span className={`font-mono text-gray-200 group-hover:text-white ${big ? 'text-sm' : 'text-xs'}`}>{link.label}</span>
@@ -142,7 +142,7 @@ export default function MediaHub() {
                   setChannelId(c.id);
                   setActiveIdx(0);
                 }}
-                className={`relative px-4 py-2 rounded-md font-cyber text-xs uppercase tracking-wider transition-colors ${c.id === channel.id ? 'text-cyber-black' : 'text-primary border border-primary/30 hover:border-primary'}`}
+                className={`relative px-4 py-2 min-h-[40px] rounded-md font-cyber text-xs uppercase tracking-wider transition-colors ${c.id === channel.id ? 'text-cyber-black' : 'text-primary border border-primary/30 hover:border-primary'}`}
               >
                 {c.id === channel.id && (
                   <motion.span layoutId="media-tab" className="absolute inset-0 rounded-md bg-primary shadow-[0_0_18px_rgba(240,126,65,0.5)]" transition={{ type: 'spring', stiffness: 420, damping: 32 }} />
@@ -200,7 +200,7 @@ export default function MediaHub() {
                       </span>
                       <span className="min-w-0">
                         <span className={`block text-xs font-mono truncate ${on ? 'text-primary' : 'text-gray-300 group-hover:text-primary/90'}`}>{item.title}</span>
-                        {item.meta && <span className="block text-[10px] font-mono text-gray-500 truncate">{item.meta}</span>}
+                        {item.meta && <span className="block text-[11px] font-mono text-gray-500 truncate">{item.meta}</span>}
                       </span>
                     </button>
                   </li>

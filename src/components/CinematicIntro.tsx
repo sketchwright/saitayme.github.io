@@ -18,7 +18,7 @@ const END = 3.15;
 const NAME_T = 0.98; // giant name appears, cropped
 const PULL = 0.8; // pull-back duration (expo)
 
-type Rect = { left: number; top: number; width: number; height: number; fontSize: string; letterSpacing: string };
+type Rect = { left: number; top: number; width: number; height: number; fontSize: string; letterSpacing: string; lineHeight: string };
 
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
 const easeOut = (t: number) => 1 - Math.pow(1 - clamp(t), 3);
@@ -117,7 +117,7 @@ export default function CinematicIntro({ onDone }: { onDone: () => void }) {
       if (!el) return false;
       const r = el.getBoundingClientRect();
       const cs = getComputedStyle(el);
-      setRect({ left: r.left, top: r.top, width: r.width, height: r.height, fontSize: cs.fontSize, letterSpacing: cs.letterSpacing });
+      setRect({ left: r.left, top: r.top, width: r.width, height: r.height, fontSize: cs.fontSize, letterSpacing: cs.letterSpacing, lineHeight: cs.lineHeight });
       return true;
     };
     let tries = 0;
@@ -288,8 +288,8 @@ export default function CinematicIntro({ onDone }: { onDone: () => void }) {
           const tear = t >= IMPACT_T && t < IMPACT_T + 0.1 ? 34 : 0;
           return (
             <div
-              className="absolute font-cyber font-bold uppercase whitespace-nowrap"
-              style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height, fontSize: rect.fontSize, letterSpacing: rect.letterSpacing, lineHeight: `${rect.height}px`, transform: `translate(${tx}px, ${ty}px) scale(${S})`, transformOrigin: 'center' }}
+              className="absolute font-cyber font-bold uppercase"
+              style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height, fontSize: rect.fontSize, letterSpacing: rect.letterSpacing, lineHeight: rect.lineHeight, transform: `translate(${tx}px, ${ty}px) scale(${S})`, transformOrigin: 'center' }}
             >
               {Array.from({ length: 6 }).map((_, b2) => (
                 <div key={b2} className="absolute inset-0 text-center" style={{ clipPath: `inset(${b2 * (100 / 6)}% 0 ${100 - (b2 + 1) * (100 / 6)}% 0)`, transform: `translateX(${(Math.sin(b2 * 3.1 + t * 22) * slice) / S + (b2 === tearBand ? tear : 0)}px)` }}>

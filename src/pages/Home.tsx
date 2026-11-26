@@ -341,7 +341,7 @@ const Home = ({ onPlayGame }: HomeProps) => {
 
               <motion.button
                 onClick={onPlayGame}
-                className="group relative px-5 py-2.5 font-mono text-xs tracking-[0.3em] uppercase text-primary border border-primary/40 hover:bg-primary hover:text-black transition-colors"
+                className="group relative px-5 py-3 min-h-[40px] font-mono text-xs tracking-[0.3em] uppercase text-primary border border-primary/40 hover:bg-primary hover:text-black transition-colors"
                 variants={gameButtonVariants}
                 initial={firstVisit ? false : 'initial'}
                 animate="animate"
