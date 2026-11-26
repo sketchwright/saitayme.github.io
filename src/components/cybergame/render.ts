@@ -558,6 +558,26 @@ export class Renderer {
         c.lineTo(e.x + Math.cos(u.tellA) * (80 + f * 320), e.y + Math.sin(u.tellA) * (80 + f * 320));
         c.stroke();
       }
+      if (u.carrier && g.boss) {
+        // carrier tell: dashed line to the boss + tag
+        const f = 0.5 + 0.5 * Math.sin(g.time * 10);
+        c.strokeStyle = `rgba(244,239,232,${(0.25 + f * 0.4).toFixed(2)})`;
+        c.lineWidth = 1;
+        c.setLineDash([3, 5]);
+        c.beginPath();
+        c.moveTo(e.x, e.y);
+        c.lineTo(g.boss.e.x, g.boss.e.y);
+        c.stroke();
+        c.setLineDash([]);
+        c.font = `600 8px ${FONT_UI}`;
+        c.textAlign = 'center';
+        c.fillStyle = WHITE;
+        c.fillText('CARRIER', e.x, e.y - u.r - 10);
+        c.strokeStyle = WHITE;
+        c.beginPath();
+        c.arc(e.x, e.y, u.r + 5 + f * 2, 0, TAU);
+        c.stroke();
+      }
       if (u.stunT > 0) {
         // EMP stun: jagged white ring
         c.strokeStyle = `rgba(244,239,232,${(0.45 + 0.4 * Math.random()).toFixed(2)})`;
@@ -1555,6 +1575,21 @@ export class Renderer {
       // phase ticks
       c.fillStyle = WHITE;
       for (const p of [0.66, 0.33]) c.fillRect(cx - w / 2 + w * p - 1, y + 3, 2, 11);
+      // ward restored by carriers
+      if (bc.ward > 0) {
+        c.fillStyle = 'rgba(244,239,232,0.7)';
+        c.fillRect(cx - w / 2 + w * Math.max(0, b.hp / b.maxHp), y + 6, Math.min(w, w * (bc.ward / b.maxHp)), 5);
+      }
+      // BREACH ticks: every 5% of boss hp counts as a kill for on-kill perks
+      for (const m of bc.marks) {
+        c.globalAlpha = Math.min(1, m.t / 0.4);
+        c.fillStyle = WHITE;
+        c.fillRect(cx - w / 2 + w * m.f - 1, y + 1, 2, 15);
+        c.font = `600 7px ${FONT_UI}`;
+        c.textAlign = 'center';
+        c.fillText('BREACH', cx - w / 2 + w * m.f, y - 1);
+      }
+      c.globalAlpha = 1;
       // phase gate: damage is held at the threshold until the pattern has run
       if (bc.gated > 0) this.label('PHASE SHIELD // SURVIVE THE PATTERN', cx, y + 26, 'center', WHITE, 8);
       // Warden shield segments still standing

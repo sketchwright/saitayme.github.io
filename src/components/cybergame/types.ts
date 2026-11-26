@@ -238,6 +238,9 @@ export interface Unit {
   stunT: number;
   /** duration of the current stun (for the ring timer) */
   stunMax: number;
+  /** boss minion that restores a shield segment / ward if it reaches the boss */
+  carrier: boolean;
+  minion: boolean;
 }
 
 export const MAX_UNITS = 72;

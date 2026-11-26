@@ -5,7 +5,7 @@
 // beams and the corrupted arena edge.
 import { Boss, Enemy, EnemyKind, bossBreakSegment, bossCharge, bossShieldSegments, createEnemy, setBossPhase, spawnEnemy, updateEnemy } from './enemies';
 import type { Vec } from './enemies';
-import { C_ORANGE, C_RED, C_WHITE, EB_HARD, EB_HOMING, EB_NEEDLE, EB_ORB, EB_PELLET, P_EMBER, P_GLITCH, P_HEX, P_RING, SfxName, TAU, U_DECOY, Unit } from './types';
+import { C_ORANGE, C_RED, C_WHITE, EB_HARD, EB_HOMING, EB_NEEDLE, EB_ORB, EB_PELLET, P_EMBER, P_GLITCH, P_HEX, P_RING, SfxName, TAU, U_DECOY, U_DYING as U_DYING_STATE, Unit } from './types';
 import type { GroupDef } from './content/sectors';
 import type { BossDef } from './content/sectors';
 
@@ -33,6 +33,7 @@ export interface BossHost {
   clearEnemyBullets(): void;
   hackRandomUpgrade(seconds: number): string | null;
   adoptUnit(e: Enemy, kind: EnemyKind, hp: number, state: number): Unit | null;
+  spawnMinion(kind: EnemyKind, x: number, y: number, carrier: boolean): Unit | null;
 }
 
 export type BossTell = 'none' | 'laserGrid' | 'charge' | 'teleport' | 'clone' | 'tether' | 'spiral' | 'beam' | 'hack' | 'sweep' | 'burst' | 'summon';
@@ -58,6 +59,9 @@ export interface Shock {
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const TELL = 0.6;
+/** ROOT beam half width and the minimum safe gap (2x the player hitbox) */
+export const BEAM_HALF = 16;
+export const BEAM_GAP = 44;
 export const SHIELD_SEGS = 8;
 const PHASES = [0.66, 0.33];
 
@@ -115,6 +119,16 @@ export class BossCtl {
   /** >0 briefly when damage hit the phase gate (for the HUD) */
   gated = 0;
   private recent = 0;
+  // ---- minions + breach ticks
+  private minionT = 6;
+  private waveNo = 0;
+  /** small damage ward restored by carriers (absorbs before hp) */
+  ward = 0;
+  /** boss damage accumulated toward the next 5% breach tick */
+  breachAcc = 0;
+  breaches = 0;
+  /** recent breach ticks on the bar: hp fraction + time left */
+  readonly marks: { f: number; t: number }[] = [];
 
   constructor(def: BossDef, private readonly host: BossHost) {
     this.def = def;
@@ -217,7 +231,8 @@ export class BossCtl {
 
     // phases at 66% / 33%
     const frac = u.hp / u.maxHp;
-    if (this.phase < PHASES.length && frac <= PHASES[this.phase]) {
+    // tolerance: the phase gate clamps hp to exactly the threshold
+    if (this.phase < PHASES.length && u.hp <= PHASES[this.phase] * u.maxHp + 0.01) {
       this.enterPhase(u, e, this.phase + 1);
       return;
     }
@@ -227,6 +242,12 @@ export class BossCtl {
       h.sfx('stingRoot');
     }
     this.variantTick(u, e, dt);
+    this.minionT -= dt;
+    if (this.minionT <= 0) {
+      this.minionT = rand(10, 12);
+      this.minionWave(u, e);
+    }
+    for (let i = this.marks.length - 1; i >= 0; i--) if ((this.marks[i].t -= dt) <= 0) this.marks.splice(i, 1);
 
     // scheduler: tell ~0.6 s, then the attack
     if (this.pending) {
@@ -252,8 +273,13 @@ export class BossCtl {
     }
   }
 
+  /** Free space left / right of the beam inside the usable arena (px). */
+  beamGaps(fw: number): [number, number] {
+    return [this.beamX - BEAM_HALF - this.inset, fw - this.inset - (this.beamX + BEAM_HALF)];
+  }
+
   private gapFor(): number {
-    const base = [1.3, 1.1, 0.9][this.variant] * (1 - this.phase * 0.15) * (this.host.hard ? 0.8 : 1);
+    const base = [1.15, 1.0, 0.8][this.variant] * (1 - this.phase * 0.18) * (this.host.hard ? 0.75 : 1);
     return this.desperate ? 0.35 : base;
   }
 
@@ -397,6 +423,8 @@ export class BossCtl {
       } else h.say('CORRUPTION SPREADS', `${sub} // ARENA COLLAPSING`, true, 2.2);
     }
     h.pushLog(`${this.def.name.toLowerCase()} phase ${p + 1}`);
+    this.minionWave(u, e);
+    this.minionT = rand(10, 12);
   }
 
   private variantTick(u: Unit, e: Boss, dt: number): void {
@@ -460,6 +488,7 @@ export class BossCtl {
         break;
       case 'beam':
         this.beam = 1;
+        this.beamX = clamp(this.beamX, this.inset + BEAM_HALF + BEAM_GAP, h.FW - this.inset - BEAM_HALF - BEAM_GAP);
         h.sfx('laser');
         break;
       case 'summon':
@@ -484,7 +513,7 @@ export class BossCtl {
     const h = this.host;
     const t = this.atkT;
     const ph = this.phase;
-    const sp = this.def.bulletSpeed * (1 + ph * 0.08) * (h.hard ? 1.1 : 1);
+    const sp = this.def.bulletSpeed * (1.06 + ph * 0.1) * (h.hard ? 1.12 : 1);
     switch (this.attack) {
       // -------------------------------------------------- WARDEN
       case 'bursts': {
@@ -614,9 +643,15 @@ export class BossCtl {
           this.beam = 2;
           h.addShake(6);
         }
+        // tracks well below player speed, and is kept away from the walls /
+        // corrupted edges so a gap of 2x the player hitbox always remains
         const speed = this.beam === 1 ? 80 : 105 + ph * 12;
         this.beamX += clamp(h.px - this.beamX, -speed * dt, speed * dt);
-        if (this.beam === 2 && Math.abs(h.px - this.beamX) < 16 && h.py > e.y) h.hurtPlayer(13, h.px, h.py - 10);
+        const lo = this.inset + BEAM_HALF + BEAM_GAP;
+        const hi = h.FW - this.inset - BEAM_HALF - BEAM_GAP;
+        this.beamX = clamp(this.beamX, lo, hi);
+        if (import.meta.env.DEV && Math.min(...this.beamGaps(h.FW)) < BEAM_GAP - 0.5) console.warn('beam left no safe gap', this.beamGaps(h.FW));
+        if (this.beam === 2 && Math.abs(h.px - this.beamX) < BEAM_HALF && h.py > e.y) h.hurtPlayer(18, h.px, h.py - 10);
         if (this.beam === 2 && Math.random() < dt * 24) h.sparks(this.beamX + rand(-10, 10), h.FH - rand(0, 40), -Math.PI / 2, 1.2, 1, 60, 220, C_ORANGE);
         if (t > 3.0 + ph * 0.3) {
           this.beam = 0;
@@ -719,11 +754,69 @@ export class BossCtl {
   }
 
   private summon(e: Boss, n: number): void {
+    // attack-driven summons use the same themed, capped minion pool
+    void n;
+    const u = this.host.units.find((x) => x.e === e);
+    if (u) this.minionWave(u, e);
+  }
+
+  /** Themed, weak, capped minions; one carrier per wave that can shield the boss. */
+  private minionWave(u: Unit, e: Boss): void {
     const h = this.host;
-    const kinds: EnemyKind[] = ['crawler', 'wraith', 'leech', 'swarm'];
-    const room = 6 - (h.countAlive() - 1);
-    for (let i = 0; i < Math.min(n, room); i++) h.spawnGroup({ kind: kinds[(Math.random() * kinds.length) | 0], n: 1, from: 'boss', at: 0, gap: 0 }, false, e.x, e.y);
-    h.particle(P_HEX, e.x, e.y, 60, 0, 0.35, 16, C_ORANGE, 0);
+    let alive = 0;
+    for (const x of h.units) if (!x.dead && x.minion && x.state !== U_DYING_STATE) alive++;
+    const cap = h.hard ? 6 : 4;
+    const n = Math.min(cap - alive, 2 + this.phase);
+    if (n <= 0) return;
+    this.waveNo++;
+    const info = this.variant === 0 ? bossShieldSegments(e) : null;
+    for (let i = 0; i < n; i++) {
+      let kind: EnemyKind;
+      let x = e.x;
+      let y = e.y + u.r * 0.6;
+      if (this.variant === 0) {
+        // firewall drones and crawlers squeezing out of the shield gaps
+        kind = i % 3 === 2 ? 'crawler' : 'fragment';
+        if (info && info.n) {
+          const a = info.angles[(i * 3) % info.n] + Math.PI / info.n;
+          x = info.cx + Math.cos(a) * info.r1;
+          y = info.cy + Math.abs(Math.sin(a)) * info.r1;
+        }
+      } else if (this.variant === 1) {
+        // memory wisps (fragments) drifting off the shroud
+        kind = 'fragment';
+        x = e.x + rand(-u.r, u.r);
+      } else {
+        // rogue sub-processes: divers and a sentinel
+        kind = i === 0 && this.waveNo % 2 === 0 ? 'sentinel' : 'crawler';
+        x = e.x + (i % 2 ? -1 : 1) * rand(30, u.r);
+      }
+      const carrier = i === n - 1;
+      if (carrier) {
+        // carriers start well away from the boss so there is time to shoot them
+        x = clamp(e.x + (Math.random() < 0.5 ? -1 : 1) * 220, 40, h.FW - 40);
+        y = e.y + 160;
+      }
+      h.spawnMinion(kind, x, y, carrier);
+    }
+    h.particle(P_HEX, e.x, e.y, 70, 0, 0.35, 18, C_ORANGE, 0);
+    h.pushLog(`${this.def.name.toLowerCase()} spawns minions`);
+  }
+
+  /** A carrier reached the boss: restore a shield segment, else a small ward. */
+  carrierArrived(u: Unit, e: Boss): void {
+    const h = this.host;
+    const dead = this.variant === 0 && this.phase < 2 ? this.shields.findIndex((s) => s <= 0) : -1;
+    if (dead >= 0) {
+      this.shields[dead] = this.shieldMax;
+      e.segAlive[dead] = 1;
+      h.say('SHIELD RESTORED', 'KILL THE CARRIERS', true, 1.2);
+    } else {
+      this.ward = Math.min(u.maxHp * 0.12, this.ward + u.maxHp * 0.04);
+      h.say('BOSS WARDED', 'KILL THE CARRIERS', true, 1.2);
+    }
+    h.particle(P_RING, e.x, e.y, 120, 0, 0.4, u.r, C_WHITE, 0);
+    h.sfx('shieldHit');
   }
 
   private updateHazards(dt: number, e: Boss): void {

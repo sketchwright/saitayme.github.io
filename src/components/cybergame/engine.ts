@@ -5,6 +5,7 @@
 // smooth intent velocities, never by setting positions); this file owns
 // spawning, type behaviours, combat, upgrades, routes and the run structure.
 import {
+  Boss,
   Enemy,
   EnemyIntent,
   EnemyKind,
@@ -1108,6 +1109,8 @@ export class Game implements BossHost {
       hunted: false,
       stunT: 0,
       stunMax: 1,
+      carrier: false,
+      minion: false,
     };
     this.units.push(u);
     return u;
@@ -1916,7 +1919,17 @@ export class Game implements BossHost {
       const dp = Math.hypot(dxp, dyp) || 1;
       this.affixTick(u, dt);
       let handled = false;
-      if (u.hunted) {
+      if (u.carrier && this.boss && this.bc) {
+        const b = this.boss.e;
+        intent = this.goal(u, b.x, b.y, e.kind === 'fragment' ? 40 : 32);
+        handled = true;
+        if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < (this.boss.r * 0.7) ** 2) {
+          this.bc.carrierArrived(this.boss, b as Boss);
+          u.dead = true;
+          e.alive = false;
+          continue;
+        }
+      } else if (u.hunted) {
         intent = this.huntIntent(u);
         handled = true;
       } else if (u.role && (u.state === U_ACT || u.state === U_HUNT)) {
@@ -2176,7 +2189,7 @@ export class Game implements BossHost {
     for (const f of e.spawned) {
       if (this.units.length >= MAX_UNITS) break;
       const hp = Math.max(1, Math.round(KIND_STATS.fragment.hp * this.sector.hpMul));
-      const fu: Unit = { ...this.blankUnit(f, 'fragment'), hp, maxHp: hp, state: U_FREE, life: rand(5, 8) };
+      const fu: Unit = { ...this.blankUnit(f, 'fragment'), hp, maxHp: hp, state: U_FREE, life: rand(5, 8), minion: u.minion };
       this.units.push(fu);
     }
     e.spawned = null;
@@ -2232,6 +2245,8 @@ export class Game implements BossHost {
       hunted: false,
       stunT: 0,
       stunMax: 1,
+      carrier: false,
+      minion: false,
     };
   }
 
@@ -2309,7 +2324,7 @@ export class Game implements BossHost {
     // scale with the player's build: average build at this point -> base hp
     // sqrt: a stronger build still kills faster, just not proportionally faster
     const REF = [1.6, 2.6, 3.4];
-    const powerK = Math.sqrt(clamp(this.stats.power / REF[def.variant], 1, 3));
+    const powerK = clamp(this.stats.power / REF[def.variant], 0.4, 3) * 1.15;
     const u = this.adoptUnit(e, 'boss', Math.round(def.hp * powerK * (this.hard ? 1.3 : 1)), U_BOSS);
     if (!u) return;
     u.r = def.size * 0.3;
@@ -2334,6 +2349,33 @@ export class Game implements BossHost {
   }
 
   /** Wraps an externally created entity as a unit (boss, decoys). */
+  /** Weak, quick boss minion (feeds on-kill perks). Carriers fly to the boss. */
+  spawnMinion(kind: EnemyKind, x: number, y: number, carrier: boolean): Unit | null {
+    const u = this.makeUnit(kind, x, y, false, KIND_STATS[kind].size * (kind === 'sentinel' ? 0.85 : 0.9));
+    if (!u) return null;
+    u.hp = u.maxHp = Math.max(1, Math.round(u.maxHp * 0.3));
+    u.minion = true;
+    u.carrier = carrier;
+    u.from = 'boss';
+    u.score = Math.round(u.score * 0.4);
+    if (kind === 'fragment') {
+      u.state = U_FREE;
+      u.life = rand(6, 9);
+    } else if (kind === 'crawler') {
+      u.state = U_HUNT;
+      this.applyRole(u, 'diver');
+    } else if (kind === 'sentinel') {
+      [u.gx, u.gy] = this.stationFor(Math.random() < 0.5 ? -1 : 1);
+      u.state = U_ENTER;
+    } else u.state = U_ACT;
+    if (carrier) {
+      u.state = U_FREE;
+      u.life = 99;
+    }
+    spawnEnemy(u.e);
+    return u;
+  }
+
   adoptUnit(e: Enemy, kind: EnemyKind, hp: number, state: number): Unit | null {
     if (this.units.length >= MAX_UNITS) return null;
     const u: Unit = { ...this.blankUnit(e, kind), hp, maxHp: hp, state };
@@ -2428,6 +2470,24 @@ export class Game implements BossHost {
         u.flash = 0.03;
         return;
       }
+      if (this.bc.ward > 0) {
+        const a = Math.min(this.bc.ward, dmg);
+        this.bc.ward -= a;
+        dmg -= a;
+        if (Math.random() < 0.3) this.sparks(x, y, -Math.PI / 2, 1.2, 2, 80, 220, C_WHITE);
+        if (dmg <= 0) {
+          u.flash = 0.03;
+          return;
+        }
+      }
+      // every 5% of boss hp lost counts as a kill for on-kill perks
+      this.bc.breachAcc += dmg;
+      const step = u.maxHp * 0.1;
+      while (this.bc.breachAcc >= step && this.bc.breaches < 9) {
+        this.bc.breachAcc -= step;
+        this.bc.breaches++;
+        this.breach(u, x, y, (u.hp - dmg) / u.maxHp);
+      }
     }
     dmg = this.absorb(u, dmg, x, y);
     if (dmg <= 0) {
@@ -2440,6 +2500,32 @@ export class Game implements BossHost {
     if (crit) this.text(x, y - 8, `${Math.round(dmg * 10)}`, C_WHITE, false);
     if (u.hp <= 0) this.killUnit(u, true);
     if (chain > 0) this.chainFrom(u, x, y, dmg * this.stats.chainDmg, chain);
+  }
+
+  /** Boss "kill": on-kill perks fire at the last hit point. */
+  private breachCombo = 0;
+
+  private breach(u: Unit, x: number, y: number, frac: number): void {
+    const bc = this.bc;
+    if (!bc) return;
+    bc.marks.push({ f: Math.max(0, frac), t: 0.8 });
+    if (bc.marks.length > 8) bc.marks.shift();
+    this.text(x, y - 14, 'BREACH', C_WHITE, false);
+    this.particle(P_HEX, x, y, 40, 0, 0.25, 8, C_WHITE, 0);
+    // a floor, not a feed: everything at 35% of a real kill; minions are the main feed
+    const k = 0.35;
+    if (this.stats.lifesteal > 0) this.heal(this.stats.lifesteal * k, 'steal');
+    // explosion and chain from a breach only reach minions (the boss is the source and excluded)
+    if (this.stats.cascade > 0) this.cascade(x, y, u.id, k);
+    if (this.stats.chain > 0) this.chainFrom(u, x, y, this.stats.dmg * 2 * this.stats.chainDmg * k, this.stats.chain);
+    this.breachCombo += k;
+    if (this.breachCombo >= 1) {
+      this.breachCombo -= 1;
+      this.combo++;
+      this.comboT = this.stats.comboTime;
+      this.mult = Math.min(this.stats.comboCap, 1 + Math.floor(this.combo / 8));
+    }
+    if (this.stats.pulse) this.empCharge = Math.min(this.empCost, this.empCharge + 0.07 * this.stats.pulseRecharge * k);
   }
 
   private chainFrom(src: Unit, x: number, y: number, dmg: number, jumps: number): void {
@@ -2539,9 +2625,9 @@ export class Game implements BossHost {
     if (this.stats.cascade > 0) this.cascade(e.x, e.y, u.id);
   }
 
-  private cascade(x: number, y: number, srcId: number): void {
+  private cascade(x: number, y: number, srcId: number, scale = 1): void {
     const R = 58;
-    const dmg = this.stats.dmg * this.stats.cascade;
+    const dmg = this.stats.dmg * this.stats.cascade * scale;
     this.particle(P_RING, x, y, R, 0, 0.25, 6, C_HOT, 0);
     this.particle(P_EMBER, x, y, 0, 0, 0.22, R * 1.4, C_ORANGE, 0);
     const hits: Unit[] = [];
