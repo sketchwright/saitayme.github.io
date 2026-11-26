@@ -21,11 +21,15 @@ import {
   createEnemy,
   drawEnemy,
   drawEnemyDebug,
+  hurtEnemy,
+  isDying,
+  killEnemy,
   leechIsLatched,
   leechToggleLatch,
   monoFont,
   provokeEnemy,
   setBossPhase,
+  spawnEnemy,
   updateEnemy,
 } from './index';
 
@@ -78,6 +82,7 @@ const state = {
   paused: false,
   stress: false,
   bossP2: false,
+  chaos: false,
   time: 0,
   mouseX: -1,
   mouseY: -1,
@@ -94,11 +99,11 @@ const nextSeed = (): number => (seedCounter = (seedCounter * 16807 + 11) % 21474
 const spawn = (kind: EnemyKind, x: number, y: number): Enemy => createEnemy(kind, x, y, nextSeed(), { size: SIZES[kind] * state.scale });
 
 const CELL_DEFS: Array<Omit<Cell, 'x' | 'y' | 'w' | 'h' | 'enemies' | 'target' | 'mouseIn' | 'respawnT' | 'ph'>> = [
-  { kind: 'crawler', no: '01', label: 'CRAWLER', sub: 'IK WALKER / 7 NEEDLE LIMBS', hint: 'CLICK: FREEZE > LUNGE', span: 1, hMul: 1 },
-  { kind: 'wraith', no: '02', label: 'WRAITH', sub: 'PHASING FLYER / EYE CLUSTER', hint: 'CLICK: PHASE STRIKE', span: 1, hMul: 1 },
-  { kind: 'leech', no: '03', label: 'LEECH', sub: 'HOOK LIMBS / DRAIN CORE', hint: 'CLICK: LATCH / RELEASE', span: 1, hMul: 1 },
-  { kind: 'swarm', no: '04', label: 'SWARM-NODE', sub: 'SPLITS INTO FRAGMENTS', hint: 'CLICK: SPLIT', span: 1, hMul: 1 },
-  { kind: 'sentinel', no: '05', label: 'SENTINEL', sub: 'TURRET / CHARGE TELL', hint: 'CLICK: CHARGE + FIRE', span: 2, hMul: 1 },
+  { kind: 'crawler', no: '01', label: 'CRAWLER', sub: 'BLADE WALKER / 5 LIMBS, 1 DRAGGED', hint: 'CLICK: FREEZE > LUNGE', span: 1, hMul: 1 },
+  { kind: 'wraith', no: '02', label: 'WRAITH', sub: 'TORN VEIL / PHASING FLYER', hint: 'CLICK: PHASE STRIKE', span: 1, hMul: 1 },
+  { kind: 'leech', no: '03', label: 'LEECH', sub: 'SEGMENTED LANCE / DRAIN', hint: 'CLICK: LATCH / RELEASE', span: 1, hMul: 1 },
+  { kind: 'swarm', no: '04', label: 'SWARM-NODE', sub: 'CUBE CLUSTER / SPLITS', hint: 'CLICK: SPLIT', span: 1, hMul: 1 },
+  { kind: 'sentinel', no: '05', label: 'SENTINEL', sub: 'ARMORED LENS TOWER', hint: 'CLICK: CHARGE + FIRE', span: 2, hMul: 1 },
   { kind: 'boss', no: '06', label: 'BOSS / ROGUE-AI EYE', sub: 'PHASE 1', hint: 'CLICK OR B: TOGGLE PHASE', span: 99, hMul: 1.45 },
   { kind: 'pursuit', no: '07', label: 'PURSUIT', sub: 'ALL TYPES CHASE THE CURSOR', hint: 'CLICK: SPLIT NEAREST NODE / PROVOKE ALL', span: 99, hMul: 1.5 },
 ];
@@ -248,8 +253,86 @@ function lungeAll(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Chaos test: abrupt random / absurd / NaN intents, teleports, dt spikes on
+// the pursuit cell. Leg sanity is measured and shown on the cell.
+
+interface ChaosIn {
+  v: Vec;
+  t: number;
+}
+const chaosIn = new WeakMap<Enemy, ChaosIn>();
+const chaosStats = { stretch: 0, segErr: 0, snaps: 0, winStretch: 0, winSeg: 0, winT: 0, spikeT: 1 };
+
+function legSanity(list: Enemy[]): void {
+  for (const e of list) {
+    if (e.kind !== 'crawler' && e.kind !== 'sentinel') continue;
+    for (const L of e.rig.legs) {
+      if (L.det >= 0) continue;
+      const n = L.n;
+      const reach = Math.hypot(L.j[n * 2] - L.j[0], L.j[n * 2 + 1] - L.j[1]) / L.total;
+      if (reach > chaosStats.winStretch) chaosStats.winStretch = reach;
+      for (let k = 0; k < n; k++) {
+        const l = Math.hypot(L.j[k * 2 + 2] - L.j[k * 2], L.j[k * 2 + 3] - L.j[k * 2 + 1]);
+        const err = Math.abs(l / L.len[k] - 1);
+        // middle joints sit on a bow (approximate by design); only femur + needle are exact
+        if ((k === 0 || k === n - 1) && err > chaosStats.winSeg) chaosStats.winSeg = err;
+      }
+    }
+  }
+}
+
+function chaosDrive(c: Cell, dt: number): void {
+  const list = c.enemies;
+  for (const e of list) {
+    let ci = chaosIn.get(e);
+    if (!ci) {
+      ci = { v: { x: 0, y: 0 }, t: 0 };
+      chaosIn.set(e, ci);
+    }
+    ci.t -= dt;
+    if (ci.t <= 0) {
+      ci.t = 0.05 + Math.random() * 0.45;
+      const a = Math.random() * TAU;
+      const m = Math.random() < 0.15 ? 3000 : Math.random() * 400 * state.scale;
+      ci.v.x = Math.random() < 0.05 ? NaN : Math.cos(a) * m;
+      ci.v.y = Math.sin(a) * m;
+    }
+    if (Math.random() < dt * 0.35) {
+      e.x = 30 + Math.random() * (c.w - 60);
+      e.y = 30 + Math.random() * (c.h - 60);
+    }
+  }
+}
+
+function hitAll(): void {
+  for (const c of cells) {
+    for (const e of c.enemies) {
+      // knock away from the cell's target (cursor / reticle)
+      hurtEnemy(e, e.x - c.target.x, e.y - c.target.y, 1);
+    }
+  }
+}
+
+function killAll(): void {
+  for (const c of cells) for (const e of c.enemies) if (!isDying(e)) killEnemy(e);
+}
+
+function respawnAll(): void {
+  for (const c of cells) {
+    populate(c);
+    for (const e of c.enemies) spawnEnemy(e);
+  }
+}
+
 function splitAll(): void {
   for (const c of cells) for (const e of c.enemies) if (e.kind === 'swarm') beginSplit(e);
+}
+
+function toggleChaos(): void {
+  state.chaos = !state.chaos;
+  chaosStats.stretch = chaosStats.segErr = chaosStats.winStretch = chaosStats.winSeg = 0;
+  syncButtons();
 }
 
 function setScale(s: number): void {
@@ -272,6 +355,7 @@ function syncButtons(): void {
   btn('b-pause')?.classList.toggle('on', state.paused);
   btn('b-stress')?.classList.toggle('on', state.stress);
   btn('b-boss')?.classList.toggle('on', state.bossP2);
+  btn('b-chaos')?.classList.toggle('on', state.chaos);
   btn('b-s1')?.classList.toggle('on', state.scale === 1);
   btn('b-s2')?.classList.toggle('on', state.scale === 2);
   btn('b-s3')?.classList.toggle('on', state.scale === 3);
@@ -289,6 +373,10 @@ bind('b-debug', () => {
 bind('b-lunge', lungeAll);
 bind('b-boss', toggleBoss);
 bind('b-split', splitAll);
+bind('b-hit', hitAll);
+bind('b-chaos', toggleChaos);
+bind('b-kill', killAll);
+bind('b-spawn', respawnAll);
 bind('b-slow', () => {
   state.slow = !state.slow;
   syncButtons();
@@ -318,6 +406,10 @@ window.addEventListener('keydown', (ev) => {
     syncButtons();
     ev.preventDefault();
   } else if (k === 'p') toggleStress();
+  else if (k === 'h') hitAll();
+  else if (k === 'c') toggleChaos();
+  else if (k === 'k') killAll();
+  else if (k === 'n') respawnAll();
   else if (k === '1' || k === '2' || k === '3') setScale(Number(k));
 });
 
@@ -346,9 +438,20 @@ function updateCell(c: Cell, dt: number): void {
   }
   if (dt <= 0) return;
   const list = c.enemies;
+  const chaos = state.chaos && c.kind === 'pursuit';
+  let udt = dt;
+  if (chaos) {
+    chaosDrive(c, dt);
+    chaosStats.spikeT -= dt;
+    if (chaosStats.spikeT <= 0) {
+      chaosStats.spikeT = 0.8 + Math.random() * 1.5;
+      const r = Math.random();
+      udt = r < 0.5 ? 0.25 + Math.random() * 0.5 : r < 0.75 ? 0 : -0.1; // spike / zero / negative
+    }
+  }
   for (let i = 0; i < list.length; i++) {
     const e = list[i];
-    updateEnemy(e, dt, c.target, null);
+    updateEnemy(e, udt, c.target, chaos ? chaosIn.get(e)?.v ?? null : null);
     if (e.kind === 'swarm' && e.spawned) {
       for (const f of e.spawned) list.push(f);
       e.spawned = null;
@@ -370,10 +473,34 @@ function updateCell(c: Cell, dt: number): void {
   }
   list.length = w;
   if (c.kind === 'pursuit') separate(list);
+  if (chaos) {
+    legSanity(list);
+    chaosStats.winT += dt;
+    if (chaosStats.winT > 0.5) {
+      chaosStats.stretch = chaosStats.winStretch;
+      chaosStats.segErr = chaosStats.winSeg;
+      chaosStats.winStretch = chaosStats.winSeg = chaosStats.winT = 0;
+      let n = 0;
+      for (const e of list) n += e.mo.snaps;
+      chaosStats.snaps = n;
+    }
+  }
+  // everything killed (K): re-materialise after a beat
+  if (list.length === 0 && c.kind !== 'swarm') {
+    c.respawnT += dt;
+    if (c.respawnT > 1.2) {
+      populate(c);
+      for (const e of c.enemies) spawnEnemy(e);
+    }
+    return;
+  }
   // swarm cell: re-form after the fragments have had their moment
   if (c.kind === 'swarm' && !list.some((e) => e.kind === 'swarm')) {
     c.respawnT += dt;
-    if (c.respawnT > 4.5) populate(c);
+    if (c.respawnT > 4.5) {
+      populate(c);
+      for (const e of c.enemies) spawnEnemy(e);
+    }
   }
   if (c.kind === 'pursuit') {
     const nodes = list.filter((e) => e.kind === 'swarm').length;
@@ -382,8 +509,17 @@ function updateCell(c: Cell, dt: number): void {
       if (c.respawnT > 5) {
         c.respawnT = 0;
         for (let i = list.length - 1; i >= 0; i--) if (list[i].kind === 'fragment') list.splice(i, 1);
-        list.push(spawn('swarm', c.w * 0.2, c.h * 0.3), spawn('swarm', c.w * 0.8, c.h * 0.3));
-        list.push(spawn('fragment', c.w * 0.5, c.h * 0.1), spawn('fragment', c.w * 0.5, c.h * 0.9), spawn('fragment', c.w * 0.1, c.h * 0.5));
+        const fresh = [
+          spawn('swarm', c.w * 0.2, c.h * 0.3),
+          spawn('swarm', c.w * 0.8, c.h * 0.3),
+          spawn('fragment', c.w * 0.5, c.h * 0.1),
+          spawn('fragment', c.w * 0.5, c.h * 0.9),
+          spawn('fragment', c.w * 0.1, c.h * 0.5),
+        ];
+        for (const f of fresh) {
+          spawnEnemy(f);
+          list.push(f);
+        }
       }
     }
   }
@@ -489,6 +625,15 @@ function drawLabels(c: Cell): void {
   if (c.kind === 'pursuit') {
     ctx.textAlign = 'right';
     ctx.fillText(`${c.enemies.length} ENTITIES`, c.w - 16, c.h - 12);
+    if (state.chaos) {
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = chaosStats.stretch > 1.001 || chaosStats.segErr > 0.02 ? '#ff5a2a' : '#f07e41';
+      ctx.fillText(
+        `CHAOS  MAX LEG REACH ${chaosStats.stretch.toFixed(3)}  FEMUR/NEEDLE ERR ${(chaosStats.segErr * 100).toFixed(1)}%  SNAPS ${chaosStats.snaps}`,
+        c.w - 16,
+        14,
+      );
+    }
   }
   ctx.letterSpacing = '0px';
 }
@@ -553,3 +698,5 @@ function frame(now: number): void {
 layout();
 syncButtons();
 requestAnimationFrame(frame);
+// dev inspection hook
+(window as unknown as { __bestiary: unknown }).__bestiary = { state, cells: () => cells, chaosStats };

@@ -1,46 +1,66 @@
-// LEECH: elongated segmented body that slithers (follow-the-leader spine),
-// four jointed hook-limbs at the head (IK). Near the target it freezes,
-// lunges, latches (hooks clamp onto points around the target) and drains:
+// LEECH: segmented lance. A spearhead skull trailed by nested chevron
+// armour segments (gaps between, one cracked and knocked out of line) and a
+// needle tail, with four jointed hook-limbs at the head (IK). It slithers
+// with peristaltic surges, coils (segments compress) before a stretched
+// lunge, latches (hooks clamp onto points around the target) and drains:
 // pulses travel down the spine into a throbbing core.
 
 import {
   CreateOpts,
   Ctx2D,
+  DEATH_COLLAPSE,
   EnemyBase,
   EyeTrack,
   PAL,
+  Spring,
   TAU,
   Vec,
+  addDebrisPoly,
+  burstGlyphs,
+  clamp,
   coreColor,
   damp,
+  drawChargeEye,
+  drawDebris,
+  drawEye,
   drawGlitched,
   drawGlow,
   drawTrail,
+  edgeA,
+  ensureDebris,
   grayA,
   hotA,
+  hurtBase,
+  killBase,
   makeBase,
   makeEye,
+  makeSpring,
   orangeA,
   rand,
   randRange,
+  silFill,
   steer,
+  stepSpring,
+  tickFx,
   turnToward,
   updateEye,
   updateGlitch,
   updateTrail,
   whiteA,
+  robustUpdate,
 } from './common';
 import { solveChain } from './ik';
 
 export const LEECH_SIZE = 64;
-
-const EYE_PTS = [2.5, -1.8, 1.2, 1.6, -0.6, -0.4];
 
 const SEEK = 0;
 const FREEZE = 1;
 const LUNGE = 2;
 const LATCHED = 3;
 const RECOIL = 4;
+
+const CORE_SEG = 4;
+const HEAD = [13, 0, 4, -4.4, -2.5, -5.2, -0.6, -1.2, -3.2, 0, -0.6, 1.2, -2.5, 5.2, 4, 4.4];
 
 interface Hook {
   n: number;
@@ -76,6 +96,11 @@ export interface Leech extends EnemyBase {
   drain: number;
   eye: EyeTrack;
   auto: boolean;
+  head: Float32Array;
+  /** spine length multiplier (spring: <1 coiled, >1 stretched) */
+  comp: Spring;
+  crack: number;
+  shattered: boolean;
 }
 
 export function createLeech(x: number, y: number, seed: number, opts?: CreateOpts): Leech {
@@ -83,7 +108,7 @@ export function createLeech(x: number, y: number, seed: number, opts?: CreateOpt
   const b = makeBase(x, y, seed, size);
   const u = size / 64;
   const segN = 9;
-  const segLen = 5.2 * u;
+  const segLen = 5.6 * u;
   const sx = new Float32Array(segN);
   const sy = new Float32Array(segN);
   const wid = new Float32Array(segN);
@@ -91,25 +116,23 @@ export function createLeech(x: number, y: number, seed: number, opts?: CreateOpt
     sx[i] = x;
     sy[i] = y - i * segLen;
     const f = i / (segN - 1);
-    wid[i] = (i === 0 ? 4.5 : 6.5 * Math.sin(Math.PI * (0.25 + f * 0.75)) + 1) * u * randRange(b, 0.9, 1.1);
+    wid[i] = (i === 0 ? 4.5 : 6.4 * Math.sin(Math.PI * (0.22 + f * 0.7)) + 1.2) * u * randRange(b, 0.9, 1.1);
   }
   const hooks: Hook[] = [];
   const spec: Array<[number, number, number]> = [
-    // side, length, ring angle
-    [-1, 21, -0.9],
+    [-1, 22, -0.9],
     [-1, 14, -0.35],
-    [1, 18, 0.5],
+    [1, 19, 0.5],
     [1, 11, 1.05],
   ];
   for (const [side, l, ang] of spec) {
     const L = l * u * randRange(b, 0.9, 1.15);
-    const len = new Float32Array([L * 0.42, L * 0.34, L * 0.24]);
     hooks.push({
       n: 3,
-      len,
+      len: new Float32Array([L * 0.42, L * 0.34, L * 0.24]),
       total: L,
-      ax: 3 * u,
-      ay: side * randRange(b, 2, 3.5) * u,
+      ax: 2 * u,
+      ay: side * randRange(b, 2.5, 4) * u,
       side,
       ang,
       tx: x,
@@ -120,6 +143,8 @@ export function createLeech(x: number, y: number, seed: number, opts?: CreateOpt
       twY: 0,
     });
   }
+  const head = new Float32Array(HEAD.length);
+  for (let i = 0; i < HEAD.length; i++) head[i] = HEAD[i] * u * 1.3;
   return {
     ...b,
     kind: 'leech',
@@ -139,11 +164,16 @@ export function createLeech(x: number, y: number, seed: number, opts?: CreateOpt
     drain: 0,
     eye: makeEye(),
     auto: true,
+    head,
+    comp: makeSpring(1),
+    crack: 2 + ((rand(b) * 4) | 0),
+    shattered: false,
   };
 }
 
 /** Bestiary / game hook: release if latched, else freeze-lunge-latch now. */
 export function leechToggleLatch(e: Leech): void {
+  if (e.deathT >= 0) return;
   if (e.mode === LATCHED) {
     e.mode = RECOIL;
     e.modeT = 0;
@@ -155,8 +185,110 @@ export function leechToggleLatch(e: Leech): void {
 
 export const leechIsLatched = (e: Leech): boolean => e.mode === LATCHED;
 
+/** Optional hit reaction: knockback (tears it off if latched), recoil kink, glitch. */
+export function hurtLeech(e: Leech, dx: number, dy: number, strength = 1): void {
+  if (e.deathT >= 0) return;
+  hurtBase(e, dx, dy, strength);
+  e.comp.v -= 4;
+  for (const h of e.hooks) {
+    h.twX = (rand(e) - 0.5) * 8 * (e.size / 64);
+    h.twY = (rand(e) - 0.5) * 8 * (e.size / 64);
+  }
+  if (e.mode === LATCHED && strength >= 1) {
+    e.mode = RECOIL;
+    e.modeT = 0;
+  }
+}
+
+/** Optional death: hooks go limp, the lance breaks apart segment by segment. */
+export function killLeech(e: Leech): void {
+  killBase(e);
+  e.drain = 0;
+}
+
+function spine(e: Leech): void {
+  const sx = e.sx;
+  const sy = e.sy;
+  const L = e.segLen * e.comp.x;
+  sx[0] = e.x;
+  sy[0] = e.y;
+  for (let i = 1; i < e.segN; i++) {
+    const ddx = sx[i] - sx[i - 1];
+    const ddy = sy[i] - sy[i - 1];
+    const d = Math.hypot(ddx, ddy) || 1e-4;
+    sx[i] = sx[i - 1] + (ddx / d) * L;
+    sy[i] = sy[i - 1] + (ddy / d) * L;
+  }
+}
+
+function dying(e: Leech, dt: number, target: Vec): void {
+  const u = e.size / 64;
+  const t = e.deathT;
+  steer(e, 0, 0, 5, dt);
+  e.x += e.vx * dt;
+  e.y += e.vy * dt;
+  stepSpring(e.comp, 0.7, 120, 0.4, dt);
+  spine(e);
+  // hooks fold limp toward the body
+  const c = Math.cos(e.heading);
+  const s = Math.sin(e.heading);
+  for (const h of e.hooks) {
+    const hx = e.x + c * h.ax - s * h.ay;
+    const hy = e.y + s * h.ax + c * h.ay;
+    const a = e.heading + h.side * 2.4;
+    h.tx += (hx + Math.cos(a) * h.total * 0.35 - h.tx) * damp(8, dt);
+    h.ty += (hy + Math.sin(a) * h.total * 0.35 - h.ty) * damp(8, dt);
+    solveChain(h.j, h.len, h.n, h.total, hx, hy, h.tx, h.ty, -s * h.side, c * h.side, 0.9, 3);
+  }
+  if (!e.shattered && t >= DEATH_COLLAPSE) {
+    e.shattered = true;
+    const d = ensureDebris(e, 22, 0.8);
+    addDebrisPoly(d, e.head, e.x, e.y, e.heading, 1, e.sx[3], e.sy[3], 90 * u, e.vx, e.vy, e);
+    const tri = new Float32Array(6);
+    for (let i = 1; i < e.segN; i++) {
+      const w = e.wid[i];
+      const L = e.segLen;
+      tri[0] = L * 0.5;
+      tri[1] = 0;
+      tri[2] = -L * 0.35;
+      tri[3] = -w;
+      tri[4] = -L * 0.35;
+      tri[5] = w;
+      const a = Math.atan2(e.sy[i - 1] - e.sy[i], e.sx[i - 1] - e.sx[i]);
+      addDebrisPoly(d, tri, e.sx[i], e.sy[i], a, 1, e.sx[CORE_SEG], e.sy[CORE_SEG], 80 * u, 0, 0, e);
+    }
+    burstGlyphs(e, e.sx[CORE_SEG], e.sy[CORE_SEG], 12, 140 * u);
+  }
+  updateEye(e.eye, e, e.x, e.y, target, dt, 1.5, 1);
+  updateGlitch(e, dt, 3.5, 0.2);
+  updateTrail(e, dt, 1e9);
+}
+
+const resetLeech = (e: Leech): void => {
+  const c = Math.cos(e.heading);
+  const s = Math.sin(e.heading);
+  for (let i = 0; i < e.segN; i++) {
+    e.sx[i] = e.x - c * e.segLen * i;
+    e.sy[i] = e.y - s * e.segLen * i;
+  }
+  for (const h of e.hooks) {
+    h.tx = e.x + c * h.ax - s * h.ay;
+    h.ty = e.y + s * h.ax + c * h.ay;
+  }
+};
+
+/** Robust public update (see robustUpdate). */
 export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | null): void {
+  const u = e.size / 64;
+  robustUpdate(e, dt, target, intent, 110 * u, 420 * u, 14, stepLeech, resetLeech);
+}
+
+function stepLeech(e: Leech, dt: number, target: Vec, intent: Vec | null): void {
   e.t += dt;
+  if (tickFx(e, dt)) {
+    dying(e, dt, target);
+    return;
+  }
   e.modeT += dt;
   const u = e.size / 64;
   const dx = target.x - e.x;
@@ -164,12 +296,13 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
   const dist = Math.hypot(dx, dy) || 1;
   const reach = 22 * u;
   let turn = 3.5;
+  let compT = 1;
   switch (e.mode) {
     case SEEK: {
       e.cooldown -= dt;
-      // peristaltic surge + weave
       const surge = 0.35 + 0.65 * Math.pow(Math.max(0, Math.sin(e.t * 5.5)), 2);
       const weave = Math.sin(e.t * 3.2) * 0.55;
+      compT = 0.94 + surge * 0.08; // peristaltic squeeze
       let dvx: number;
       let dvy: number;
       if (intent) {
@@ -194,6 +327,7 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       steer(e, 0, 0, 25, dt);
       const p = Math.min(1, e.modeT / 0.45);
       e.charge = p;
+      compT = 1 - 0.24 * Math.sqrt(p); // coil
       if (rand(e) < dt * 8) e.heading = turnToward(e.heading, Math.atan2(dy, dx), 0.4);
       turn = 0;
       if (p >= 1) {
@@ -201,7 +335,8 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
         e.modeT = 0;
         e.lx = dx / dist;
         e.ly = dy / dist;
-        e.heading = Math.atan2(dy, dx);
+        e.heading = turnToward(e.heading, Math.atan2(dy, dx), 0.45);
+        e.comp.v += 5;
       }
       break;
     }
@@ -211,6 +346,7 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       const sp = Math.min(380 * u * (1 - p) * (1 - p), want / Math.max(dt, 1e-3));
       e.vx = e.lx * sp;
       e.vy = e.ly * sp;
+      compT = 1.14;
       turn = 10;
       if (p >= 1 || want < 2 * u) {
         if (dist < reach * 1.6) {
@@ -226,7 +362,6 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       break;
     }
     case LATCHED: {
-      // stay clamped at standoff from the (possibly moving) victim
       e.latchX = target.x;
       e.latchY = target.y;
       const sx = e.latchX - (dx / dist) * reach * 0.75;
@@ -234,7 +369,9 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       e.vx = (sx - e.x) * 10;
       e.vy = (sy - e.y) * 10;
       e.drain = Math.min(1, e.drain + dt * 1.5);
-      e.charge = 0.45 + 0.55 * Math.pow(0.5 + 0.5 * Math.sin(e.t * 9), 3);
+      const pump = Math.pow(0.5 + 0.5 * Math.sin(e.t * 9), 3);
+      e.charge = 0.45 + 0.55 * pump;
+      compT = 0.92 + pump * 0.08;
       e.heading = turnToward(e.heading, Math.atan2(dy, dx), 6 * dt);
       turn = 0;
       if (e.auto && e.modeT > 2.6) {
@@ -244,12 +381,12 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       break;
     }
     default: {
-      // recoil: backward burst
       const p = Math.min(1, e.modeT / 0.4);
       const sp = -220 * u * (1 - p) * (1 - p);
       e.vx = Math.cos(e.heading) * sp;
       e.vy = Math.sin(e.heading) * sp;
       e.charge += (0 - e.charge) * damp(4, dt);
+      compT = 0.85;
       turn = 0;
       if (p >= 1) {
         e.mode = SEEK;
@@ -258,23 +395,12 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
       }
     }
   }
+  stepSpring(e.comp, compT, 160, 0.38, dt);
   e.x += e.vx * dt;
   e.y += e.vy * dt;
   const sp = Math.hypot(e.vx, e.vy);
   if (turn > 0 && sp > 5 * u) e.heading = turnToward(e.heading, Math.atan2(e.vy, e.vx), turn * dt);
-
-  // follow-the-leader spine
-  const sx = e.sx;
-  const sy = e.sy;
-  sx[0] = e.x;
-  sy[0] = e.y;
-  for (let i = 1; i < e.segN; i++) {
-    const ddx = sx[i] - sx[i - 1];
-    const ddy = sy[i] - sy[i - 1];
-    const d = Math.hypot(ddx, ddy) || 1e-4;
-    sx[i] = sx[i - 1] + (ddx / d) * e.segLen;
-    sy[i] = sy[i - 1] + (ddy / d) * e.segLen;
-  }
+  spine(e);
 
   // hooks
   const c = Math.cos(e.heading);
@@ -287,7 +413,7 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
     const hy = e.y + s * h.ax + c * h.ay;
     h.twT -= dt;
     if (h.twT <= 0) {
-      h.twT = randRange(e, 0.06, 0.5);
+      h.twT = randRange(e, 0.12, 0.7);
       h.twX = (rand(e) - 0.5) * 3 * u;
       h.twY = (rand(e) - 0.5) * 3 * u;
     }
@@ -295,30 +421,27 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
     let gy: number;
     if (latched) {
       const a = Math.atan2(-dy, -dx) + h.ang;
-      gx = e.latchX + Math.cos(a) * vr;
-      gy = e.latchY + Math.sin(a) * vr;
-      gx += (Math.random() - 0.5) * 0.8 * u;
-      gy += (Math.random() - 0.5) * 0.8 * u;
+      const dig = Math.sin(e.t * 9 + h.ang * 3) * 0.6 * u; // hooks work in rhythm
+      gx = e.latchX + Math.cos(a) * (vr + dig);
+      gy = e.latchY + Math.sin(a) * (vr + dig);
     } else if (anticip) {
-      // splay wide, forward
-      const f = h.total * 0.78;
-      const a = e.heading + h.side * 0.75 + h.ang * 0.3;
+      const f = h.total * 0.8;
+      const a = e.heading + h.side * 0.8 + h.ang * 0.3;
       gx = hx + Math.cos(a) * f;
       gy = hy + Math.sin(a) * f;
     } else {
-      // folded back along the head, twitching
       const a = e.heading + h.side * 1.9;
       const f = h.total * 0.45;
       gx = hx + Math.cos(a) * f + h.twX;
       gy = hy + Math.sin(a) * f + h.twY;
     }
-    const k = damp(latched ? 30 : anticip ? 22 : 14, dt);
+    const k = damp(latched ? 30 : anticip ? 22 : 12, dt);
     h.tx += (gx - h.tx) * k;
     h.ty += (gy - h.ty) * k;
     solveChain(h.j, h.len, h.n, h.total, hx, hy, h.tx, h.ty, -s * h.side, c * h.side, 0.7, 4);
   }
 
-  updateEye(e.eye, e, e.x, e.y, target, dt, 0.4);
+  updateEye(e.eye, e, e.x, e.y, target, dt, 0.4, e.charge);
   updateGlitch(e, dt, 0.35 + e.charge * 1.5, 0.05);
   updateTrail(e, dt, 150 * u);
 }
@@ -326,16 +449,60 @@ export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | nu
 function drawBody(ctx: Ctx2D, e: Leech, time: number): void {
   const u = e.size / 64;
   const w = Math.max(0.75, 0.9 * Math.sqrt(u));
+  const lw = Math.max(1, w);
   const n = e.segN;
   const sx = e.sx;
   const sy = e.sy;
   const wid = e.wid;
+  const fill = silFill(e);
+  const dying = e.deathT >= 0;
+  const a0 = ctx.globalAlpha;
+  if (dying) ctx.globalAlpha = a0 * clamp(1 - (e.deathT - DEATH_COLLAPSE) / 0.4, 0, 1);
 
-  // cilia needles along the body (ripple wave), drawn first
+  // hooks: dark limbs with orange edges, off-white barbs
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (const h of e.hooks) {
+    ctx.moveTo(h.j[0], h.j[1]);
+    for (let i = 1; i <= h.n; i++) ctx.lineTo(h.j[i * 2], h.j[i * 2 + 1]);
+  }
+  ctx.strokeStyle = edgeA(e, 0.85);
+  ctx.lineWidth = w * 1.8 + 2;
+  ctx.stroke();
+  ctx.strokeStyle = fill;
+  ctx.lineWidth = w * 1.8;
+  ctx.stroke();
+  ctx.strokeStyle = whiteA(0.85);
+  ctx.lineWidth = Math.max(0.8, w);
+  ctx.beginPath();
+  for (const h of e.hooks) {
+    const ex = h.j[h.n * 2];
+    const ey = h.j[h.n * 2 + 1];
+    const dx = ex - h.j[h.n * 2 - 2];
+    const dy = ey - h.j[h.n * 2 - 1];
+    const d = Math.hypot(dx, dy) || 1;
+    const bl = 3.4 * u;
+    ctx.moveTo(ex - (dx / d) * bl * 0.4, ey - (dy / d) * bl * 0.4);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - (dx / d) * bl - (dy / d) * bl * h.side, ey - (dy / d) * bl + (dx / d) * bl * h.side);
+  }
+  ctx.stroke();
+  ctx.fillStyle = orangeA(1);
+  ctx.beginPath();
+  const js = Math.max(1.4, 1.6 * w);
+  for (const h of e.hooks) for (let i = 1; i < h.n; i++) ctx.rect(h.j[i * 2] - js / 2, h.j[i * 2 + 1] - js / 2, js, js);
+  ctx.fill();
+  if (e.shattered) {
+    ctx.globalAlpha = a0;
+    return;
+  }
+
+  // cilia needles (ripple wave), every other segment, off-white tips
   ctx.strokeStyle = grayA(0.7);
   ctx.lineWidth = Math.max(0.6, w * 0.7);
   ctx.beginPath();
-  for (let i = 1; i < n - 1; i++) {
+  for (let i = 2; i < n - 1; i += 2) {
     const dx = sx[i - 1] - sx[i + 1];
     const dy = sy[i - 1] - sy[i + 1];
     const d = Math.hypot(dx, dy) || 1;
@@ -343,61 +510,68 @@ function drawBody(ctx: Ctx2D, e: Leech, time: number): void {
     const ny = dx / d;
     const tx = dx / d;
     const ty = dy / d;
-    const rip = Math.sin(time * 12 - i * 1.1) * 2 * u;
-    const l = wid[i] + (3 + (i % 3) * 2) * u;
-    ctx.moveTo(sx[i] + nx * wid[i], sy[i] + ny * wid[i]);
-    ctx.lineTo(sx[i] + nx * l - tx * (3 * u + rip), sy[i] + ny * l - ty * (3 * u + rip));
-    const l2 = wid[i] + (2 + ((i + 1) % 3) * 2.5) * u;
-    ctx.moveTo(sx[i] - nx * wid[i], sy[i] - ny * wid[i]);
-    ctx.lineTo(sx[i] - nx * l2 - tx * (3 * u - rip), sy[i] - ny * l2 - ty * (3 * u - rip));
+    const rip = Math.sin(time * 10 - i * 1.1) * 2 * u;
+    const l = wid[i] + 6 * u;
+    ctx.moveTo(sx[i] + nx * wid[i] * 0.8, sy[i] + ny * wid[i] * 0.8);
+    ctx.lineTo(sx[i] + nx * l - tx * (4 * u + rip), sy[i] + ny * l - ty * (4 * u + rip));
+    ctx.moveTo(sx[i] - nx * wid[i] * 0.8, sy[i] - ny * wid[i] * 0.8);
+    ctx.lineTo(sx[i] - nx * l - tx * (4 * u - rip), sy[i] - ny * l - ty * (4 * u - rip));
   }
   ctx.stroke();
 
-  // body outline: left edge forward, right edge back
+  // needle tail
+  const tdx = sx[n - 1] - sx[n - 2];
+  const tdy = sy[n - 1] - sy[n - 2];
+  const tl = Math.hypot(tdx, tdy) || 1;
+  const tipX = sx[n - 1] + (tdx / tl) * 13 * u;
+  const tipY = sy[n - 1] + (tdy / tl) * 13 * u;
+  ctx.strokeStyle = orangeA(0.8);
+  ctx.lineWidth = Math.max(0.8, w * 1.2);
   ctx.beginPath();
-  for (let pass = 0; pass < 2; pass++) {
-    const sgn = pass === 0 ? 1 : -1;
-    for (let k = 0; k < n; k++) {
-      const i = pass === 0 ? k : n - 1 - k;
-      const a = i > 0 ? i - 1 : 0;
-      const b = i < n - 1 ? i + 1 : n - 1;
-      const dx = sx[a] - sx[b];
-      const dy = sy[a] - sy[b];
-      const d = Math.hypot(dx, dy) || 1;
-      const wv = wid[i] * (1 + 0.08 * Math.sin(time * 7 - i));
-      const px = sx[i] + (-dy / d) * wv * sgn;
-      const py = sy[i] + (dx / d) * wv * sgn;
-      if (pass === 0 && k === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    if (pass === 0) {
-      // pointed tail
-      const dx = sx[n - 1] - sx[n - 2];
-      const dy = sy[n - 1] - sy[n - 2];
-      ctx.lineTo(sx[n - 1] + dx * 1.6, sy[n - 1] + dy * 1.6);
-    }
-  }
-  ctx.closePath();
-  ctx.fillStyle = PAL.body;
-  ctx.fill();
-  ctx.lineWidth = w;
-  ctx.strokeStyle = orangeA(0.7);
+  ctx.moveTo(sx[n - 1], sy[n - 1]);
+  ctx.lineTo(tipX, tipY);
   ctx.stroke();
-  // rib plates
-  ctx.strokeStyle = PAL.grayMid;
+  ctx.fillStyle = whiteA(0.9);
+  ctx.fillRect(tipX - 1, tipY - 1, 2, 2);
+
+  // chevron segments (batched): tip forward, swept wings, notch behind
   ctx.beginPath();
-  for (let i = 1; i < n - 1; i++) {
-    const dx = sx[i - 1] - sx[i + 1];
-    const dy = sy[i - 1] - sy[i + 1];
+  for (let i = 1; i < n; i++) {
+    const a = i - 1;
+    const b = i < n - 1 ? i + 1 : n - 1;
+    let dx = sx[a] - sx[b];
+    let dy = sy[a] - sy[b];
     const d = Math.hypot(dx, dy) || 1;
-    const wv = wid[i] * 0.8;
-    ctx.moveTo(sx[i] + (-dy / d) * wv, sy[i] + (dx / d) * wv);
-    ctx.lineTo(sx[i] - (-dy / d) * wv, sy[i] - (dx / d) * wv);
+    dx /= d;
+    dy /= d;
+    const nx = -dy;
+    const ny = dx;
+    const L = e.segLen * e.comp.x;
+    const wv = wid[i] * (1 + 0.06 * Math.sin(time * 6 - i));
+    let cx = sx[i];
+    let cy = sy[i];
+    if (i === e.crack) {
+      cx += nx * 1.6 * u;
+      cy += ny * 1.6 * u;
+    }
+    const f = L * 0.52;
+    const bk = L * 0.38;
+    ctx.moveTo(cx + dx * f, cy + dy * f);
+    ctx.lineTo(cx - dx * bk + nx * wv, cy - dy * bk + ny * wv);
+    ctx.lineTo(cx - dx * bk * 0.15 + nx * wv * 0.25, cy - dy * bk * 0.15 + ny * wv * 0.25);
+    ctx.lineTo(cx - dx * bk * 0.15 - nx * wv * 0.25, cy - dy * bk * 0.15 - ny * wv * 0.25);
+    ctx.lineTo(cx - dx * bk - nx * wv, cy - dy * bk - ny * wv);
+    ctx.closePath();
   }
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = edgeA(e, 0.8);
   ctx.stroke();
 
   // drain pulses travelling head -> core
-  const ci = 4;
+  const ci = CORE_SEG;
   if (e.drain > 0.05) {
     for (let k = 0; k < 3; k++) {
       const f = (time * 1.6 + k / 3) % 1;
@@ -411,71 +585,51 @@ function drawBody(ctx: Ctx2D, e: Leech, time: number): void {
       ctx.fillRect(px - r, py - r, r * 2, r * 2);
     }
   }
-  // core
-  const cr = (3.2 + e.charge * 1.6) * u;
-  ctx.fillStyle = coreColor(e.charge);
+  // core (breathing) inside its chevron
+  const cr = (2.6 + e.charge * 1.4 + Math.sin(time * 2.6 + e.seed) * 0.3) * u;
+  const ca = Math.atan2(sy[ci + 1] - sy[ci - 1], sx[ci + 1] - sx[ci - 1]);
+  ctx.fillStyle = coreColor(0.3 + e.charge * 0.7);
   ctx.beginPath();
-  ctx.ellipse(sx[ci], sy[ci], cr, cr * 0.7, Math.atan2(sy[ci + 1] - sy[ci - 1], sx[ci + 1] - sx[ci - 1]), 0, TAU);
+  ctx.ellipse(sx[ci], sy[ci], cr * 0.7, cr, ca, 0, TAU);
   ctx.fill();
-  drawGlow(ctx, sx[ci], sy[ci], (8 + e.charge * 12) * u, 0.15 + e.charge * 0.7);
+  drawGlow(ctx, sx[ci], sy[ci], (8 + e.charge * 12) * u, dying ? 0.9 : 0.15 + e.charge * 0.7);
 
-  // hooks
-  ctx.lineCap = 'round';
-  ctx.strokeStyle = orangeA(0.9);
-  ctx.lineWidth = w;
-  ctx.beginPath();
-  for (const h of e.hooks) {
-    ctx.moveTo(h.j[0], h.j[1]);
-    for (let i = 1; i <= h.n; i++) ctx.lineTo(h.j[i * 2], h.j[i * 2 + 1]);
-    // barb: curl back inward
-    const ex = h.j[h.n * 2];
-    const ey = h.j[h.n * 2 + 1];
-    const dx = ex - h.j[h.n * 2 - 2];
-    const dy = ey - h.j[h.n * 2 - 1];
-    const d = Math.hypot(dx, dy) || 1;
-    const bl = 3.2 * u;
-    ctx.lineTo(ex - (dx / d) * bl - (dy / d) * bl * h.side, ey - (dy / d) * bl + (dx / d) * bl * h.side);
-  }
-  ctx.stroke();
-  ctx.fillStyle = PAL.white;
-  for (const h of e.hooks) ctx.fillRect(h.j[2] - 0.75, h.j[3] - 0.75, 1.5, 1.5);
-
-  // head wedge + eye cluster
-  const c = Math.cos(e.heading);
-  const s = Math.sin(e.heading);
+  // spearhead skull
   ctx.save();
   ctx.translate(e.x, e.y);
   ctx.rotate(e.heading);
   ctx.beginPath();
-  ctx.moveTo(7 * u, 0);
-  ctx.lineTo(2 * u, -4.5 * u);
-  ctx.lineTo(-4 * u, -5 * u);
-  ctx.lineTo(-3 * u, 4.6 * u);
-  ctx.lineTo(3 * u, 3.8 * u);
+  const H = e.head;
+  ctx.moveTo(H[0], H[1]);
+  for (let i = 2; i < H.length; i += 2) ctx.lineTo(H[i], H[i + 1]);
   ctx.closePath();
-  ctx.fillStyle = PAL.bodyHi;
+  ctx.fillStyle = fill;
   ctx.fill();
-  ctx.strokeStyle = orangeA(0.9);
+  ctx.strokeStyle = edgeA(e, 0.95);
+  ctx.lineWidth = lw;
+  ctx.stroke();
+  ctx.strokeStyle = PAL.grayMid;
+  ctx.beginPath();
+  ctx.moveTo(15 * u, 0);
+  ctx.lineTo(8 * u, 0);
   ctx.stroke();
   ctx.restore();
-  const ex = e.eye.ox * 0.9 * u;
-  const ey = e.eye.oy * 0.9 * u;
-  for (let k = 0; k < 3; k++) {
-    const lx = EYE_PTS[k * 2] * u;
-    const ly = EYE_PTS[k * 2 + 1] * u;
-    const wx = e.x + c * lx - s * ly;
-    const wy = e.y + s * lx + c * ly;
-    const r = (k === 0 ? 1.5 : 1.0) * u;
-    ctx.fillStyle = coreColor(0.3 + e.charge * 0.7);
-    ctx.fillRect(wx - r, wy - r, r * 2, r * 2);
-    ctx.fillStyle = whiteA(0.9);
-    ctx.fillRect(wx + ex - 0.6, wy + ey - 0.6, 1.2, 1.2);
-  }
+  const c = Math.cos(e.heading);
+  const s = Math.sin(e.heading);
+  drawEye(ctx, e.x + c * 3.5 * u, e.y + s * 3.5 * u, 3.2 * u, e.eye, e.charge, 0.9, e.heading + Math.PI / 2);
+  // charge eye on the second segment
+  drawChargeEye(ctx, sx[2], sy[2], 1.8 * u, e.eye, e.charge, Math.atan2(sy[1] - sy[3], sx[1] - sx[3]));
+  ctx.globalAlpha = a0;
 }
 
 export function drawLeech(ctx: Ctx2D, e: Leech, time: number): void {
   drawTrail(ctx, e);
-  drawGlitched(ctx, e, time, e.size * 1.2, drawBody);
+  drawGlitched(ctx, e, time, e.size * 1.25, drawBody);
+  if (e.shattered) {
+    drawDebris(ctx, e.debris, time);
+    const p = (e.deathT - DEATH_COLLAPSE) / 0.5;
+    if (p < 1) drawGlow(ctx, e.sx[CORE_SEG], e.sy[CORE_SEG], (14 + p * 24) * (e.size / 64), (1 - clamp(p, 0, 1)) * 0.9);
+  }
 }
 
 export function drawLeechDebug(ctx: Ctx2D, e: Leech): void {

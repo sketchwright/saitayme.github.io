@@ -8,12 +8,20 @@
 // update() is pure motion/animation state; no projectiles or damage. Signals
 // the game can read: Sentinel.fired (one frame), SwarmNode.spawned (fragments
 // to adopt after beginSplit), e.alive / e.done, e.charge (0..1).
+//
+// Optional FX (all safe to ignore):
+//   hurtEnemy(e, dirX, dirY, strength?)  hit flash + knockback + limb flinch + tear
+//   killEnemy(e)    death anim: limbs collapse/detach, body shatters, glyph burst;
+//                   e.alive = false immediately, e.done = true when finished
+//                   (swarm nodes split into fragments by default)
+//   spawnEnemy(e)   glitch materialise-in (~0.3 s of assembling slices)
+//   isDying(e)      true while the death animation plays
 
-import type { CreateOpts, Ctx2D, Vec } from './common';
-import { Boss, bossCharge, createBoss, drawBoss, drawBossDebug, updateBoss } from './boss';
-import { Crawler, crawlerLunge, createCrawler, drawCrawler, drawCrawlerDebug, updateCrawler } from './crawler';
-import { Leech, createLeech, drawLeech, drawLeechDebug, leechToggleLatch, updateLeech } from './leech';
-import { Sentinel, createSentinel, drawSentinel, drawSentinelDebug, sentinelCharge, updateSentinel } from './sentinel';
+import { CreateOpts, Ctx2D, Vec, spawnBase } from './common';
+import { Boss, bossCharge, createBoss, drawBoss, drawBossDebug, hurtBoss, killBoss, updateBoss } from './boss';
+import { Crawler, crawlerLunge, createCrawler, drawCrawler, drawCrawlerDebug, hurtCrawler, killCrawler, updateCrawler } from './crawler';
+import { Leech, createLeech, drawLeech, drawLeechDebug, hurtLeech, killLeech, leechToggleLatch, updateLeech } from './leech';
+import { Sentinel, createSentinel, drawSentinel, drawSentinelDebug, hurtSentinel, killSentinel, sentinelCharge, updateSentinel } from './sentinel';
 import {
   Fragment,
   SwarmNode,
@@ -24,10 +32,14 @@ import {
   drawSwarmNode,
   drawSwarmNodeDebug,
   fragmentDart,
+  hurtFragment,
+  hurtSwarmNode,
+  killFragment,
+  killSwarmNode,
   updateFragment,
   updateSwarmNode,
 } from './swarm';
-import { Wraith, createWraith, drawWraith, drawWraithDebug, updateWraith, wraithStrike } from './wraith';
+import { Wraith, createWraith, drawWraith, drawWraithDebug, hurtWraith, killWraith, updateWraith, wraithStrike } from './wraith';
 
 export * from './common';
 export * from './ik';
@@ -139,3 +151,50 @@ export function provokeEnemy(e: Enemy): void {
       return bossCharge(e);
   }
 }
+
+/** Optional hit reaction. (dirX, dirY) = knockback direction (need not be normalised). */
+export function hurtEnemy(e: Enemy, dirX = 0, dirY = 0, strength = 1): void {
+  switch (e.kind) {
+    case 'crawler':
+      return hurtCrawler(e, dirX, dirY, strength);
+    case 'wraith':
+      return hurtWraith(e, dirX, dirY, strength);
+    case 'leech':
+      return hurtLeech(e, dirX, dirY, strength);
+    case 'swarm':
+      return hurtSwarmNode(e, dirX, dirY, strength);
+    case 'fragment':
+      return hurtFragment(e, dirX, dirY, strength);
+    case 'sentinel':
+      return hurtSentinel(e, dirX, dirY, strength);
+    case 'boss':
+      return hurtBoss(e, dirX, dirY, strength);
+  }
+}
+
+/** Optional death animation. Keep updating + drawing until e.done. */
+export function killEnemy(e: Enemy): void {
+  switch (e.kind) {
+    case 'crawler':
+      return killCrawler(e);
+    case 'wraith':
+      return killWraith(e);
+    case 'leech':
+      return killLeech(e);
+    case 'swarm':
+      return killSwarmNode(e, true);
+    case 'fragment':
+      return killFragment(e);
+    case 'sentinel':
+      return killSentinel(e);
+    case 'boss':
+      return killBoss(e);
+  }
+}
+
+/** Optional spawn-in: glitch materialise over ~0.3 s (call right after create). */
+export function spawnEnemy(e: Enemy): void {
+  spawnBase(e);
+}
+
+export const isDying = (e: Enemy): boolean => e.deathT >= 0 || (e.kind === 'swarm' && e.splitT >= 0);

@@ -1,35 +1,54 @@
-// CRAWLER: fast asymmetric walker. Seven needle limbs (4 left / 3 right) of
-// unequal length on true IK, single tracking eye, stop-start stalking,
-// freeze + tremble + charge, then an ease-out lunge.
+// CRAWLER: shard/blade walker. A broken, faceted blade body (nose blade +
+// thorax plate + lagging tail shard, with gaps, a missing chunk and loose
+// floating fragments), five long asymmetric limbs on true IK (3 left, 2 right
+// of which one is snapped and dragged), forward sensor needles, back data
+// spines. Stop-start stalking, crouch-compress anticipation, a stretched
+// lunge with splayed legs and skidding feet, then overshoot and settle.
 
 import {
   CreateOpts,
   Ctx2D,
+  DEATH_COLLAPSE,
   EnemyBase,
   EyeTrack,
   PAL,
+  Spring,
   Vec,
+  addDebrisPoly,
+  burstGlyphs,
+  clamp,
   coreColor,
   damp,
+  drawChargeEye,
+  drawDebris,
   drawEye,
   drawGlitched,
   drawGlow,
   drawTrail,
-  grayA,
+  edgeA,
+  ensureDebris,
+  hurtBase,
+  killBase,
   makeBase,
   makeEye,
+  makeSpring,
   orangeA,
-  polyPath,
+  polySub,
   rand,
   randRange,
-  shardShape,
+  scaledPoly,
+  silFill,
   steer,
+  stepSpring,
+  tickFx,
   turnToward,
   updateEye,
   updateGlitch,
   updateTrail,
+  whiteA,
+  robustUpdate,
 } from './common';
-import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, updateRig } from './ik';
+import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
 
 export const CRAWLER_SIZE = 56;
 
@@ -37,6 +56,13 @@ const STALK = 0;
 const FREEZE = 1;
 const LUNGE = 2;
 const RECOVER = 3;
+const LUNGE_TIME = 0.36;
+
+// local polygons at size 56 (+x forward)
+const NOSE = [21, 0.6, 10, -5.2, 2.5, -6.6, 3.4, -1.8, 0.6, 4.6, 5.6, 3.1, 8, 5.9];
+const THORAX = [-0.6, -8, -9.5, -6.4, -14, -0.8, -10.5, 6, -3.2, 7.4, -1.6, 2.4];
+const TAIL = [1, -3.4, -8.5, -2.2, -12.5, 1.6, -4, 4.4];
+const FRAG_ANCHORS = [4.5, -10.5, -6, 10, -16.5, -5.5];
 
 export interface Crawler extends EnemyBase {
   kind: 'crawler';
@@ -55,9 +81,21 @@ export interface Crawler extends EnemyBase {
   palpB: number;
   palpT: number;
   eye: EyeTrack;
-  shape: Float32Array;
+  nose: Float32Array;
+  thorax: Float32Array;
   tail: Float32Array;
+  frags: Float32Array[];
+  fragOff: Float32Array; // per frag: dx, dy (glitch snap offsets)
+  fragT: number;
   spines: Float32Array;
+  /** squash along heading (spring; <1 crouch, >1 stretch) */
+  sq: Spring;
+  /** body pull along heading in px (spring) */
+  pull: Spring;
+  /** idle head twitch (radians, decays) */
+  tw: number;
+  twT: number;
+  shattered: boolean;
 }
 
 export function createCrawler(x: number, y: number, seed: number, opts?: CreateOpts): Crawler {
@@ -65,31 +103,33 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
   const b = makeBase(x, y, seed, size);
   const u = size / 56;
   const legs: Leg[] = [];
-  // asymmetric layout: 4 left, 3 right
-  const sides: Array<[number, number]> = [
-    [-1, 4],
-    [1, 3],
+  // [side, hipX, hipY, rest angle off forward (deg), reach, segs, group, drag]
+  const specs: Array<[number, number, number, number, number, number, number, boolean]> = [
+    [-1, 9.5, -4.6, 42, 37, 4, 0, false], // left front: longest, reaches ahead
+    [-1, -2.5, -7.2, 95, 31, 3, 1, false], // left mid (thorax)
+    [-1, -11, -4.2, 148, 35, 4, 0, false], // left rear
+    [1, 4.2, 5.6, 58, 34, 4, 1, false], // right front
+    [1, -9, 6.2, 150, 24, 3, 0, true], // right rear: snapped, dragged
   ];
-  for (const [side, count] of sides) {
-    for (let k = 0; k < count; k++) {
-      const f = count === 1 ? 0.5 : k / (count - 1);
-      const hx = (7 - f * 14 + randRange(b, -1.5, 1.5)) * u;
-      const hy = side * (4 + randRange(b, 0, 2)) * u;
-      // fan from forward-reaching to back-trailing
-      const fan = (0.95 - f * 2.0 + randRange(b, -0.15, 0.15)) * side;
-      const reach = (27 + randRange(b, -4, 8) + (k === 0 ? 5 : 0)) * u;
-      const ang = side * Math.PI * 0.5 - fan;
-      const rx = hx + Math.cos(ang) * reach;
-      const ry = hy + Math.sin(ang) * reach;
-      const n = rand(b) < 0.5 ? 3 : 4;
-      const total = reach * randRange(b, 1.28, 1.55);
-      const segs: number[] = [];
-      const w = n === 3 ? [0.36, 0.38, 0.26] : [0.3, 0.27, 0.24, 0.19];
-      for (let i = 0; i < n; i++) segs.push(total * w[i] * randRange(b, 0.9, 1.1));
-      legs.push(makeLeg({ hx, hy, rx, ry, side, group: (k + (side > 0 ? 1 : 0)) % 2, segs }));
-    }
+  for (const [side, hx0, hy0, deg, reach0, n, group, drag] of specs) {
+    const hx = (hx0 + randRange(b, -1, 1)) * u;
+    const hy = (hy0 + randRange(b, -0.6, 0.6)) * u;
+    const ang = (side * (deg + randRange(b, -8, 8)) * Math.PI) / 180;
+    const reach = (reach0 + randRange(b, -3, 4)) * u;
+    const rx = hx + Math.cos(ang) * reach;
+    const ry = hy + Math.sin(ang) * reach;
+    const total = reach * randRange(b, 1.32, 1.5);
+    const w = n === 3 ? [0.38, 0.37, 0.25] : [0.3, 0.28, 0.24, 0.18];
+    const segs: number[] = [];
+    for (let i = 0; i < n; i++) segs.push(total * w[i] * randRange(b, 0.9, 1.1));
+    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
   }
-  const rig = makeRig(legs, 8 * u, 0.17, 1.6);
+  const rig = makeRig(legs, 8.5 * u, 0.13, 1.6);
+  const frags: Float32Array[] = [];
+  for (let i = 0; i < 3; i++) {
+    const r = randRange(b, 1.6, 2.8);
+    frags.push(scaledPoly(b, [r * 1.3, 0, -r, -r * 0.8, -r * 0.5, r * 0.9], u, 0.8));
+  }
   const e: Crawler = {
     ...b,
     kind: 'crawler',
@@ -108,18 +148,28 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
     palpB: -0.3,
     palpT: 0,
     eye: makeEye(),
-    shape: shardShape(b, 9, 13 * u, 8 * u, 0.22, 0.35),
-    tail: shardShape(b, 5, 7 * u, 4 * u, 0.3, 0.6),
+    nose: scaledPoly(b, NOSE, u, 1.6),
+    thorax: scaledPoly(b, THORAX, u, 1.6),
+    tail: scaledPoly(b, TAIL, u, 1.2),
+    frags,
+    fragOff: new Float32Array(6),
+    fragT: 0.5,
     spines: new Float32Array(0),
+    sq: makeSpring(1),
+    pull: makeSpring(0),
+    tw: 0,
+    twT: randRange(b, 1, 3),
+    shattered: false,
   };
-  // asymmetric spines: [x0,y0,x1,y1] local
+  // data spines on the thorax: [x0,y0,x1,y1] local, pointing back/out
   const sp: number[] = [];
   const ns = 3 + ((rand(e) * 2) | 0);
   for (let i = 0; i < ns; i++) {
-    const a = randRange(e, 1.6, 4.7);
-    const r0 = 8 * u;
-    const l = randRange(e, 5, 15) * u;
-    sp.push(Math.cos(a) * r0, Math.sin(a) * r0 * 0.7, Math.cos(a) * (r0 + l), Math.sin(a) * (r0 * 0.7 + l * 0.8));
+    const x0 = randRange(e, -12, -3);
+    const side = i % 2 ? 1 : -1;
+    const y0 = side * randRange(e, 3, 6);
+    const l = randRange(e, 6, 13);
+    sp.push(x0 * u, y0 * u, (x0 - l * 0.8) * u, (y0 + side * l * 0.55) * u);
   }
   e.spines = new Float32Array(sp);
   plantRig(rig, x, y, e.heading);
@@ -127,30 +177,91 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
   return e;
 }
 
-/** Force the freeze -> tremble -> lunge sequence now. */
+/** Force the crouch -> tremble -> lunge sequence now. */
 export function crawlerLunge(e: Crawler): void {
-  if (e.mode === FREEZE || e.mode === LUNGE) return;
+  if (e.deathT >= 0 || e.mode === FREEZE || e.mode === LUNGE) return;
   e.mode = FREEZE;
   e.modeT = 0;
   e.freezeDur = 0.55 + rand(e) * 0.35;
 }
 
+/** Optional hit reaction: knockback, a limb flinch, brief glitch-out. */
+export function hurtCrawler(e: Crawler, dx: number, dy: number, strength = 1): void {
+  if (e.deathT >= 0) return;
+  hurtBase(e, dx, dy, strength);
+  rigFlinch(e.rig, e);
+  e.tw = (rand(e) < 0.5 ? -1 : 1) * 0.35;
+  e.sq.v -= 3;
+}
+
+/** Optional death: limbs collapse and detach, then the blade shatters. */
+export function killCrawler(e: Crawler): void {
+  killBase(e);
+}
+
+function dying(e: Crawler, dt: number, target: Vec): void {
+  const u = e.size / 56;
+  const t = e.deathT;
+  steer(e, 0, 0, 6, dt);
+  e.x += e.vx * dt;
+  e.y += e.vy * dt;
+  e.rig.collapse = Math.min(1, t / DEATH_COLLAPSE);
+  e.rig.splay = 0;
+  e.rig.skid = 0;
+  // limbs give out one by one, then detach
+  const legs = e.rig.legs;
+  for (let i = 0; i < legs.length; i++) if (t > 0.12 + i * 0.045) rigDetach(legs[i], e.x, e.y, 55 * u, e);
+  stepSpring(e.sq, 0.82, 260, 0.5, dt);
+  e.tremble = 1.6 * u;
+  if (!e.shattered && t >= DEATH_COLLAPSE) {
+    e.shattered = true;
+    const d = ensureDebris(e, 18, 0.75);
+    const c = e.heading;
+    addDebrisPoly(d, e.nose, e.x, e.y, c, 1, e.x, e.y, 120 * u, e.vx, e.vy, e);
+    addDebrisPoly(d, e.thorax, e.x, e.y, c, 1, e.x, e.y, 110 * u, e.vx, e.vy, e);
+    addDebrisPoly(d, e.tail, e.x - Math.cos(e.tailA) * 15 * u, e.y - Math.sin(e.tailA) * 15 * u, e.tailA, 1, e.x, e.y, 90 * u, 0, 0, e);
+    burstGlyphs(e, e.x, e.y, 10, 150 * u);
+  }
+  updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
+  updateEye(e.eye, e, e.x, e.y, target, dt, 1.5, 1);
+  updateGlitch(e, dt, 3.5, 0.2);
+  updateTrail(e, dt, 1e9);
+}
+
+const resetCrawler = (e: Crawler): void => {
+  replantRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy);
+  e.tailA = e.heading;
+};
+
+/** Robust public update: dt capped + substepped, intent clamped + smoothed, teleports re-plant. */
 export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec | null): void {
+  const u = e.size / 56;
+  robustUpdate(e, dt, target, intent, 110 * u, 480 * u, 14, stepCrawler, resetCrawler);
+}
+
+function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): void {
   e.t += dt;
+  if (tickFx(e, dt)) {
+    dying(e, dt, target);
+    return;
+  }
   e.modeT += dt;
   const u = e.size / 56;
   const dx = target.x - e.x;
   const dy = target.y - e.y;
   const dist = Math.hypot(dx, dy) || 1;
-  const walk = 62 * u;
+  const walk = 66 * u;
   let turnRate = 7;
+  let sqT = 1;
+  let pullT = 0;
+  const rig = e.rig;
 
   switch (e.mode) {
     case STALK: {
       e.burstT -= dt;
       if (e.burstT <= 0) {
         e.moving = !e.moving;
-        e.burstT = e.moving ? randRange(e, 0.25, 0.7) : randRange(e, 0.08, 0.35);
+        e.burstT = e.moving ? randRange(e, 0.3, 0.8) : randRange(e, 0.12, 0.5);
       }
       let dvx: number;
       let dvy: number;
@@ -158,7 +269,6 @@ export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec 
         dvx = intent.x;
         dvy = intent.y;
       } else {
-        // approach, then circle at standoff
         const stand = 55 * u;
         const tx = -dy / dist;
         const ty = dx / dist;
@@ -167,19 +277,30 @@ export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec 
         dvy = (dy / dist) * radial * walk + ty * walk * 0.6;
       }
       const k = e.moving ? 1 : 0.04;
-      steer(e, dvx * k, dvy * k, e.moving ? 12 : 22, dt);
-      e.tremble = e.moving ? 0 : 0.35 * u;
+      steer(e, dvx * k, dvy * k, e.moving ? 9 : 16, dt);
+      e.tremble = e.moving ? 0 : 0.25 * u;
       e.charge += (0 - e.charge) * damp(3, dt);
+      rig.splay += (0 - rig.splay) * damp(6, dt);
+      rig.skid = 0;
       e.cooldown -= dt;
       if (!intent && e.cooldown <= 0 && dist < 240 * u && dist > 35 * u && rand(e) < dt * 0.9) crawlerLunge(e);
+      // idle head twitch
+      e.twT -= dt;
+      if (e.twT <= 0) {
+        e.twT = randRange(e, 0.8, 3.2);
+        e.tw = (rand(e) < 0.5 ? -1 : 1) * randRange(e, 0.12, 0.3);
+      }
       break;
     }
     case FREEZE: {
       steer(e, 0, 0, 30, dt);
       const p = Math.min(1, e.modeT / e.freezeDur);
       e.charge = p;
-      e.tremble = (0.4 + p * 1.4) * u;
-      // jerky re-aim in discrete snaps
+      e.tremble = (0.3 + p * 1.3) * u;
+      // crouch: compress, pull back, legs splay a little for grip
+      sqT = 1 - 0.17 * Math.sqrt(p);
+      pullT = -4 * u * Math.sqrt(p);
+      rig.splay += (0.35 * p - rig.splay) * damp(10, dt);
       if (rand(e) < dt * 9) e.heading = turnToward(e.heading, Math.atan2(dy, dx), 0.5);
       turnRate = 0;
       if (p >= 1) {
@@ -187,34 +308,47 @@ export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec 
         e.modeT = 0;
         e.lx = dx / dist;
         e.ly = dy / dist;
-        e.heading = Math.atan2(dy, dx);
+        e.heading = turnToward(e.heading, Math.atan2(dy, dx), 0.45);
+        e.sq.v += 6; // snap into the stretch
+        rig.splay = 1;
       }
       break;
     }
     case LUNGE: {
-      const p = Math.min(1, e.modeT / 0.38);
-      const sp = 430 * u * (1 - p) * (1 - p);
+      const p = Math.min(1, e.modeT / LUNGE_TIME);
+      const sp = 450 * u * (1 - p) * (1 - p);
       e.vx = e.lx * sp;
       e.vy = e.ly * sp;
       e.charge = 1 - p * 0.6;
       e.tremble = 0;
       turnRate = 0;
+      e.heading = turnToward(e.heading, Math.atan2(e.ly, e.lx), 12 * dt);
+      sqT = p < 0.45 ? 1.16 : 1;
+      pullT = 3 * u;
+      rig.splay = 1 - p * 0.6;
+      rig.skid = p > 0.4 ? 0.75 * (1 - p) * 2 : 0;
       if (p >= 1) {
         e.mode = RECOVER;
         e.modeT = 0;
+        rig.skid = 0;
       }
       break;
     }
     default: {
       steer(e, 0, 0, 8, dt);
       e.charge += (0 - e.charge) * damp(5, dt);
-      e.tremble = 0.25 * u;
-      if (e.modeT > 0.35) {
+      e.tremble = 0.2 * u;
+      rig.splay += (0 - rig.splay) * damp(5, dt);
+      if (e.modeT > 0.45) {
         e.mode = STALK;
         e.cooldown = randRange(e, 1.4, 3.2);
       }
     }
   }
+
+  stepSpring(e.sq, sqT, 240, 0.42, dt);
+  stepSpring(e.pull, pullT, 200, 0.45, dt);
+  e.tw += (0 - e.tw) * damp(14, dt);
 
   e.x += e.vx * dt;
   e.y += e.vy * dt;
@@ -224,101 +358,161 @@ export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec 
 
   e.palpT -= dt;
   if (e.palpT <= 0) {
-    e.palpT = randRange(e, 0.05, 0.4);
-    e.palpA = randRange(e, 0.1, 0.7);
-    e.palpB = -randRange(e, 0.1, 0.7);
+    e.palpT = randRange(e, 0.06, 0.5);
+    e.palpA = randRange(e, 0.05, 0.6);
+    e.palpB = -randRange(e, 0.05, 0.6);
   }
+  // loose fragments: glitch-snap out, ease back
+  e.fragT -= dt;
+  const fo = e.fragOff;
+  if (e.fragT <= 0) {
+    e.fragT = randRange(e, 0.4, 2);
+    const i = ((rand(e) * 3) | 0) * 2;
+    fo[i] = (rand(e) - 0.5) * 7 * u;
+    fo[i + 1] = (rand(e) - 0.5) * 7 * u;
+  }
+  const fk = damp(7, dt);
+  for (let i = 0; i < 6; i++) fo[i] -= fo[i] * fk;
 
-  updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
+  updateRig(rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
   const c = Math.cos(e.heading);
   const s = Math.sin(e.heading);
-  updateEye(e.eye, e, e.x + c * 7 * u, e.y + s * 7 * u, target, dt, 0.35);
+  updateEye(e.eye, e, e.x + c * 9 * u, e.y + s * 9 * u, target, dt, 0.35, e.charge);
   updateGlitch(e, dt, 0.35 + e.charge * 2.2 + (e.mode === LUNGE ? 3 : 0), e.charge * 0.1);
   updateTrail(e, dt, 170 * u);
 }
 
-function drawBody(ctx: Ctx2D, e: Crawler, _time: number): void {
+function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   const u = e.size / 56;
   const w = Math.max(0.75, 0.9 * Math.sqrt(u));
-  drawRig(ctx, e.rig, w, e.tremble, 1);
+  const dying = e.deathT >= 0;
+  const fill = silFill(e);
+  drawRig(ctx, e.rig, w, e.tremble, 1, time, fill);
+  if (e.shattered) return;
 
   const c = Math.cos(e.heading);
   const s = Math.sin(e.heading);
-  const ox = c * e.rig.offX - s * e.rig.offY + (e.tremble ? (Math.random() - 0.5) * e.tremble : 0);
-  const oy = s * e.rig.offX + c * e.rig.offY + (e.tremble ? (Math.random() - 0.5) * e.tremble : 0);
+  const tj = e.tremble ? Math.sin(time * 83) * e.tremble : 0;
+  const pull = e.pull.x;
+  const ox = c * (e.rig.offX + pull) - s * e.rig.offY + tj;
+  const oy = s * (e.rig.offX + pull) + c * e.rig.offY - tj * 0.6;
   const bx = e.x + ox;
   const by = e.y + oy;
+  const lw = Math.max(1, w);
 
-  // tail shard trails with lag, connected by a spine
+  // tail shard: lags behind on a short spine
   const ta = e.tailA;
-  const tx = bx - Math.cos(ta) * 17 * u;
-  const ty = by - Math.sin(ta) * 17 * u;
-  ctx.strokeStyle = grayA(0.8);
+  const tx = bx - Math.cos(ta) * 15 * u;
+  const ty = by - Math.sin(ta) * 15 * u;
+  ctx.strokeStyle = orangeA(0.5);
   ctx.lineWidth = w;
   ctx.beginPath();
-  ctx.moveTo(bx - c * 8 * u, by - s * 8 * u);
+  ctx.moveTo(bx - c * 10 * u, by - s * 10 * u);
   ctx.lineTo(tx, ty);
   ctx.stroke();
   ctx.save();
   ctx.translate(tx, ty);
-  ctx.rotate(ta + 0.4);
-  polyPath(ctx, e.tail, 1, 1);
-  ctx.fillStyle = PAL.body;
+  ctx.rotate(ta + 0.25);
+  ctx.beginPath();
+  polySub(ctx, e.tail, 0, 0);
+  ctx.fillStyle = fill;
   ctx.fill();
-  ctx.strokeStyle = orangeA(0.5);
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = edgeA(e, 0.65);
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.translate(bx, by);
-  ctx.rotate(e.heading);
-  const sq = 1 - e.rig.bob * 0.05;
-  ctx.scale(1 + e.charge * 0.04, sq);
-  // spines
-  ctx.strokeStyle = orangeA(0.45);
-  ctx.lineWidth = Math.max(0.6, w * 0.7);
+  ctx.rotate(e.heading + e.tw);
+  const breathe = 1 + Math.sin(time * 2.3 + e.seed) * 0.02;
+  const sq = e.sq.x;
+  ctx.scale(sq * breathe, (1 / Math.sqrt(sq)) * (1 - e.rig.bob * 0.06));
+  // core: hot slit visible through the gap between the plates
+  const gap = (0.8 + e.charge * 1.8) * u;
+  const cg = 0.12 + 0.12 * Math.sin(time * 3.1 + e.seed) + e.charge * 0.85;
+  ctx.fillStyle = coreColor(cg);
+  ctx.fillRect(-1.6 * u, -5 * u, 2.4 * u, 10 * u);
+  // sensor needles (twitching) with off-white tips
+  ctx.lineWidth = Math.max(0.6, w * 0.8);
+  ctx.strokeStyle = orangeA(0.7);
   ctx.beginPath();
+  const n1x = 13 * u + Math.cos(-e.palpA) * 12 * u;
+  const n1y = -3 * u + Math.sin(-e.palpA) * 12 * u;
+  const n2x = 12 * u + Math.cos(-e.palpB) * 9 * u;
+  const n2y = 3 * u + Math.sin(-e.palpB) * 9 * u;
+  ctx.moveTo(13 * u, -3 * u);
+  ctx.lineTo(n1x, n1y);
+  ctx.moveTo(12 * u, 3 * u);
+  ctx.lineTo(n2x, n2y);
+  // data spines
   const sp = e.spines;
   for (let i = 0; i < sp.length; i += 4) {
     ctx.moveTo(sp[i], sp[i + 1]);
     ctx.lineTo(sp[i + 2], sp[i + 3]);
   }
-  // palps (twitching mandible needles)
-  ctx.moveTo(11 * u, -3 * u);
-  ctx.lineTo(11 * u + Math.cos(-e.palpA) * 9 * u, -3 * u + Math.sin(-e.palpA) * 9 * u);
-  ctx.moveTo(11 * u, 3 * u);
-  ctx.lineTo(11 * u + Math.cos(-e.palpB) * 7 * u, 3 * u + Math.sin(-e.palpB) * 7 * u);
   ctx.stroke();
-  // carapace
-  polyPath(ctx, e.shape, 1, 1);
-  ctx.fillStyle = PAL.body;
-  ctx.fill();
-  ctx.lineWidth = w;
-  ctx.strokeStyle = orangeA(0.75 + e.charge * 0.25);
-  ctx.stroke();
-  // plating seams
-  ctx.strokeStyle = PAL.grayDim;
+  ctx.fillStyle = whiteA(0.9);
+  const ts = Math.max(1, 1.2 * u);
+  ctx.fillRect(n1x - ts * 0.5, n1y - ts * 0.5, ts, ts);
+  ctx.fillRect(n2x - ts * 0.5, n2y - ts * 0.5, ts, ts);
+  for (let i = 0; i < sp.length; i += 8) ctx.fillRect(sp[i + 2] - ts * 0.5, sp[i + 3] - ts * 0.5, ts, ts);
+  // plates (batched): nose blade forward of the gap, thorax behind
   ctx.beginPath();
-  ctx.moveTo(-11 * u, -1 * u);
-  ctx.lineTo(2 * u, -4 * u);
-  ctx.lineTo(9 * u, -1 * u);
-  ctx.moveTo(-8 * u, 4 * u);
-  ctx.lineTo(1 * u, 2 * u);
+  polySub(ctx, e.nose, gap * 0.5, 0);
+  polySub(ctx, e.thorax, -gap * 0.5, 0);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = edgeA(e, 0.8 + e.charge * 0.2);
   ctx.stroke();
-  // core slit
-  ctx.fillStyle = coreColor(e.charge);
-  ctx.fillRect(-8 * u, -1.2 * u, 7 * u, 2.4 * u);
+  // facet seams
+  ctx.strokeStyle = PAL.grayMid;
+  ctx.lineWidth = Math.max(0.6, w * 0.7);
+  ctx.beginPath();
+  ctx.moveTo(19 * u + gap * 0.5, 0.4 * u);
+  ctx.lineTo(6 * u + gap * 0.5, -1.2 * u);
+  ctx.lineTo(3.4 * u + gap * 0.5, -5.6 * u);
+  ctx.moveTo(-3 * u - gap * 0.5, -6.6 * u);
+  ctx.lineTo(-8 * u - gap * 0.5, 0);
+  ctx.lineTo(-4 * u - gap * 0.5, 6.2 * u);
+  ctx.stroke();
+  // loose fragments
+  ctx.beginPath();
+  const fo = e.fragOff;
+  for (let i = 0; i < 3; i++) {
+    const fx = FRAG_ANCHORS[i * 2] * u + fo[i * 2] + Math.sin(time * 1.7 + i * 2.1) * 0.8 * u;
+    const fy = FRAG_ANCHORS[i * 2 + 1] * u + fo[i * 2 + 1];
+    polySub(ctx, e.frags[i], fx, fy);
+  }
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = edgeA(e, 0.7);
+  ctx.lineWidth = Math.max(0.7, w * 0.8);
+  ctx.stroke();
   ctx.restore();
 
-  const cx = bx - c * 4.5 * u;
-  const cy = by - s * 4.5 * u;
-  drawGlow(ctx, cx, cy, (9 + e.charge * 14) * u, 0.18 + e.charge * 0.75);
-  drawEye(ctx, bx + c * 7 * u, by + s * 7 * u, 3.6 * u, e.eye, e.charge, e.charge * 0.8);
+  const ex = bx + c * 9.5 * u;
+  const ey = by + s * 9.5 * u;
+  drawGlow(ctx, bx, by, (9 + e.charge * 15) * u, (dying ? 0.9 : 0.16 + e.charge * 0.75) * (0.9 + 0.1 * Math.sin(time * 3.1)));
+  drawEye(ctx, ex, ey, 3.8 * u, e.eye, e.charge, 0.55 + e.charge * 0.45, e.heading + Math.PI / 2);
+  // second eye on the thorax opens only while charging
+  const s2x = -7 * u;
+  const s2y = -2.8 * u;
+  drawChargeEye(ctx, bx + c * s2x - s * s2y, by + s * s2x + c * s2y, 2.1 * u, e.eye, e.charge, e.heading + Math.PI / 2);
 }
 
 export function drawCrawler(ctx: Ctx2D, e: Crawler, time: number): void {
   drawTrail(ctx, e);
-  drawGlitched(ctx, e, time, e.size * 1.1, drawBody);
+  if (e.shattered) {
+    drawGlitched(ctx, e, time, e.size * 1.3, drawBody);
+    drawDebris(ctx, e.debris, time);
+    const p = (e.deathT - DEATH_COLLAPSE) / 0.5;
+    if (p < 1) drawGlow(ctx, e.x, e.y, (14 + p * 26) * (e.size / 56), (1 - clamp(p, 0, 1)) * 0.95);
+    return;
+  }
+  drawGlitched(ctx, e, time, e.size * 1.3, drawBody);
 }
 
 export function drawCrawlerDebug(ctx: Ctx2D, e: Crawler): void {

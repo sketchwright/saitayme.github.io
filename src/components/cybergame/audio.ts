@@ -11,6 +11,12 @@ const THROTTLE: Partial<Record<SfxName, number>> = {
   bigDeath: 0.12,
   damage: 0.12,
   combo: 0.1,
+  shieldHit: 0.1,
+  enemyShot: 0.06,
+  pickup: 0.05,
+  zap: 0.05,
+  click: 0.04,
+  latch: 0.3,
 };
 
 export class Sfx {
@@ -137,8 +143,62 @@ export class Sfx {
     const j = 0.94 + Math.random() * 0.12;
     switch (name) {
       case 'shot':
-        this.tone('square', 1500 * j, 360, 0.05, 0.025);
-        this.noise(0.03, 0.02, 'highpass', 4000, 3000);
+        this.tone('square', 1300 * j, 420, 0.045, 0.018);
+        this.noise(0.025, 0.014, 'highpass', 4200, 3000);
+        break;
+      case 'enemyShot':
+        this.tone('sawtooth', 520 * j, 170, 0.12, 0.03);
+        this.tone('sine', 260 * j, 90, 0.1, 0.03);
+        break;
+      case 'shieldHit':
+        this.tone('triangle', 900, 300, 0.16, 0.05);
+        this.noise(0.12, 0.05, 'bandpass', 3000, 900, 3);
+        break;
+      case 'pickup':
+        this.tone('triangle', 660, 660, 0.06, 0.04);
+        this.tone('triangle', 990, 990, 0.08, 0.04, 0.06);
+        this.tone('sine', 1320, 1320, 0.12, 0.03, 0.12);
+        break;
+      case 'select':
+        this.tone('triangle', 440, 440, 0.08, 0.05);
+        this.tone('triangle', 660, 660, 0.08, 0.05, 0.08);
+        this.tone('triangle', 880, 1320, 0.25, 0.05, 0.16);
+        this.noise(0.3, 0.03, 'highpass', 6000, 2000, 0.8, 0.16);
+        break;
+      case 'click':
+        this.tone('square', 1800, 1200, 0.03, 0.02);
+        break;
+      case 'sector':
+        this.tone('sawtooth', 55, 110, 1.2, 0.07);
+        this.tone('triangle', 220, 220, 0.3, 0.05, 0.2);
+        this.tone('triangle', 277, 277, 0.3, 0.05, 0.5);
+        this.tone('triangle', 330, 330, 0.6, 0.05, 0.8);
+        this.noise(1.4, 0.06, 'bandpass', 300, 3000, 2);
+        break;
+      case 'laser':
+        this.tone('sawtooth', 160, 120, 1.2, 0.07);
+        this.tone('square', 80, 78, 1.2, 0.04);
+        this.noise(1.1, 0.07, 'bandpass', 1800, 600, 4);
+        break;
+      case 'dash':
+        this.noise(0.22, 0.09, 'bandpass', 800, 4000, 2);
+        this.tone('sine', 300, 900, 0.15, 0.04);
+        break;
+      case 'latch':
+        this.tone('sawtooth', 140, 60, 0.4, 0.07);
+        this.tone('square', 70, 50, 0.4, 0.04);
+        break;
+      case 'synergy':
+        for (let i = 0; i < 4; i++) this.tone('triangle', 440 * Math.pow(1.26, i), 440 * Math.pow(1.26, i), 0.14, 0.045, i * 0.07);
+        this.tone('sine', 110, 110, 0.6, 0.06);
+        break;
+      case 'victory':
+        [262, 330, 392, 523, 659].forEach((f, i) => this.tone('triangle', f, f, 0.5, 0.05, i * 0.16));
+        this.tone('sine', 65, 65, 1.6, 0.08);
+        break;
+      case 'zap':
+        this.noise(0.08, 0.05, 'highpass', 5000, 2500, 1.5);
+        this.tone('square', 2400 * j, 800, 0.05, 0.015);
         break;
       case 'hit':
         this.noise(0.045, 0.05, 'bandpass', 2600 * j, 1100, 2.5);

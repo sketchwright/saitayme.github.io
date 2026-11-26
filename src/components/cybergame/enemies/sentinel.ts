@@ -1,37 +1,55 @@
-// SENTINEL: heavy turret chassis on five spindly 4-segment legs (IK, mostly
-// planted; it shuffles to re-anchor). A lens-eye turret tracks the target in
-// mechanical steps, then a visible charge-up (core + barrel + aim line +
-// tremble) before firing (muzzle flash, recoil the legs absorb).
+// SENTINEL: armored lens tower. A heavy chassis of four broken armor plates
+// (gaps, a missing chunk, a loose floating fragment) around a breathing core
+// ring, on four long asymmetric hydraulic legs (one snapped and dragged).
+// The turret is a stacked lens tower drawn with parallax tiers so it reads
+// as tall; the lens is the eye. It tracks in mechanical steps, then a
+// visible charge-up (iris dilates, second eye opens, rails fill, aim line,
+// tremble) before firing (muzzle flash, recoil the planted legs absorb).
 
 import {
   CreateOpts,
   Ctx2D,
+  DEATH_COLLAPSE,
   EnemyBase,
   EyeTrack,
   PAL,
   TAU,
   Vec,
+  addDebrisPoly,
+  burstGlyphs,
   clamp,
   coreColor,
   damp,
+  drawChargeEye,
+  drawDebris,
   drawEye,
   drawGlitched,
   drawGlow,
+  drawTrail,
+  edgeA,
+  ensureDebris,
   hotA,
+  hurtBase,
+  killBase,
   makeBase,
   makeEye,
   orangeA,
-  polyPath,
+  polySub,
   rand,
   randRange,
+  scaledPoly,
+  silFill,
   steer,
+  tickFx,
   turnToward,
   updateEye,
   updateGlitch,
+  updateTrail,
   whiteA,
   wrapAngle,
+  robustUpdate,
 } from './common';
-import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, updateRig } from './ik';
+import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
 
 export const SENTINEL_SIZE = 70;
 
@@ -41,6 +59,15 @@ const COOL = 2;
 const CHARGE_TIME = 1.15;
 const DASH: number[] = [3, 4];
 const NODASH: number[] = [];
+
+// armor plates at size 70 (+x forward)
+const PLATES: number[][] = [
+  [17, -3, 13, -12.5, 3.5, -15.5, 1.5, -9, 10, -4.5],
+  [-1.5, -15.5, -12.5, -12.5, -18, -3, -10, -2.2, -2.8, -8.6],
+  [-18, 2.2, -13.5, 11.5, -4, 15.5, -3.2, 8.6, -10, 3.2],
+  [1.5, 15.5, 9, 13, 11, 8.5, 7.5, 6.5, 6, 3.5, 15.5, 3, 10.5, 4],
+];
+const FRAG = [2.5, 0, -1.8, -2.2, -1.2, 2];
 
 export interface Sentinel extends EnemyBase {
   kind: 'sentinel';
@@ -59,8 +86,12 @@ export interface Sentinel extends EnemyBase {
   ay: number;
   anchorT: number;
   eye: EyeTrack;
+  plates: Float32Array[];
+  frag: Float32Array;
   hull: Float32Array;
   tremble: number;
+  shake: number;
+  shattered: boolean;
 }
 
 export function createSentinel(x: number, y: number, seed: number, opts?: CreateOpts): Sentinel {
@@ -68,30 +99,25 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
   const b = makeBase(x, y, seed, size);
   const u = size / 70;
   const legs: Leg[] = [];
-  // 3 left, 2 right
-  const specs: Array<[number, number, number]> = [
-    // side, hip x, fan
-    [-1, 9, 0.9],
-    [-1, -1, 0.05],
-    [-1, -10, -0.85],
-    [1, 6, 0.6],
-    [1, -8, -0.6],
+  // side, hipX, hipY, rest angle off forward (deg), reach, group, drag
+  const specs: Array<[number, number, number, number, number, number, boolean]> = [
+    [-1, 11, -12, 52, 40, 0, false],
+    [-1, -10, -12.5, 128, 37, 1, false],
+    [1, 8, 12.5, 70, 43, 1, false],
+    [1, -12, 9.5, 140, 27, 0, true],
   ];
-  specs.forEach(([side, hx0, fan], k) => {
+  for (const [side, hx0, hy0, deg, reach0, group, drag] of specs) {
     const hx = hx0 * u;
-    const hy = side * 9 * u;
-    const reach = randRange(b, 27, 34) * u;
-    const ang = side * (Math.PI * 0.5 - fan);
+    const hy = hy0 * u;
+    const ang = (side * (deg + randRange(b, -6, 6)) * Math.PI) / 180;
+    const reach = (reach0 + randRange(b, -3, 3)) * u;
     const rx = hx + Math.cos(ang) * reach;
     const ry = hy + Math.sin(ang) * reach;
-    const total = reach * randRange(b, 1.35, 1.55);
-    const segs = [total * 0.3, total * 0.28, total * 0.24, total * 0.18];
-    legs.push(makeLeg({ hx, hy, rx, ry, side, group: k % 2, segs }));
-  });
-  const rig = makeRig(legs, 9 * u, 0.22, 1.3);
-  const hull = new Float32Array([
-    15, -4, 10, -11, -3, -13, -12, -9, -16, 1, -11, 10, 2, 12, 12, 7,
-  ].map((v) => v * u));
+    const total = reach * randRange(b, 1.32, 1.48);
+    const segs = drag ? [total * 0.42, total * 0.36, total * 0.22] : [total * 0.3, total * 0.28, total * 0.24, total * 0.18];
+    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
+  }
+  const rig = makeRig(legs, 9.5 * u, 0.15, 1.3);
   const e: Sentinel = {
     ...b,
     kind: 'sentinel',
@@ -109,8 +135,12 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
     ay: y,
     anchorT: randRange(b, 2, 4),
     eye: makeEye(),
-    hull,
+    plates: PLATES.map((p) => scaledPoly(b, p, u, 1.4)),
+    frag: scaledPoly(b, FRAG, u, 0.6),
+    hull: scaledPoly(b, [10, -4, 4, -10, -4, -10, -10, -4, -10, 4, -4, 10, 4, 10, 10, 4], u, 0),
     tremble: 0,
+    shake: 0,
+    shattered: false,
   };
   plantRig(rig, x, y, e.heading);
   return e;
@@ -118,6 +148,7 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
 
 /** Skip straight to the charge-up tell. */
 export function sentinelCharge(e: Sentinel): void {
+  if (e.deathT >= 0) return;
   if (e.mode !== CHARGE) {
     e.mode = CHARGE;
     e.modeT = 0;
@@ -132,10 +163,64 @@ export const sentinelMuzzle = (e: Sentinel, out: Vec): Vec => {
   return out;
 };
 
+/** Optional hit reaction: knockback, leg flinch, armor rattle, glitch. */
+export function hurtSentinel(e: Sentinel, dx: number, dy: number, strength = 1): void {
+  if (e.deathT >= 0) return;
+  hurtBase(e, dx, dy, strength * 0.6);
+  rigFlinch(e.rig, e);
+  e.shake = 1;
+}
+
+/** Optional death: legs buckle and detach, armor and tower shatter. */
+export function killSentinel(e: Sentinel): void {
+  killBase(e);
+  e.mode = COOL;
+}
+
+function dying(e: Sentinel, dt: number, target: Vec): void {
+  const u = e.size / 70;
+  const t = e.deathT;
+  steer(e, 0, 0, 6, dt);
+  e.x += e.vx * dt;
+  e.y += e.vy * dt;
+  e.rig.collapse = Math.min(1, t / DEATH_COLLAPSE);
+  const legs = e.rig.legs;
+  for (let i = 0; i < legs.length; i++) if (t > 0.1 + i * 0.06) rigDetach(legs[i], e.x, e.y, 50 * u, e);
+  e.tremble = 2 * u;
+  e.aim += dt * 6 * (1 - e.rig.collapse * 0.5); // tower spins down
+  if (!e.shattered && t >= DEATH_COLLAPSE) {
+    e.shattered = true;
+    const d = ensureDebris(e, 20, 0.8);
+    for (const p of e.plates) addDebrisPoly(d, p, e.x, e.y, e.heading, 1, e.x, e.y, 110 * u, e.vx, e.vy, e);
+    addDebrisPoly(d, e.hull, e.x, e.y, e.aim, 1, e.x, e.y, 60 * u, 0, 0, e);
+    burstGlyphs(e, e.x, e.y, 12, 160 * u);
+  }
+  updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
+  updateEye(e.eye, e, e.x, e.y, target, dt, 1.5, 1);
+  updateGlitch(e, dt, 3.5, 0.2);
+  updateTrail(e, dt, 1e9);
+}
+
+const resetSentinel = (e: Sentinel): void => {
+  replantRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy);
+  e.ax = e.x;
+  e.ay = e.y;
+};
+
+/** Robust public update (see robustUpdate). `fired` survives substeps. */
 export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Vec | null): void {
-  e.t += dt;
-  e.modeT += dt;
   e.fired = false;
+  const u = e.size / 70;
+  robustUpdate(e, dt, target, intent, 60 * u, 200 * u, 6, stepSentinel, resetSentinel);
+}
+
+function stepSentinel(e: Sentinel, dt: number, target: Vec, intent: Vec | null): void {
+  e.t += dt;
+  if (tickFx(e, dt)) {
+    dying(e, dt, target);
+    return;
+  }
+  e.modeT += dt;
   const u = e.size / 70;
   const dx = target.x - e.x;
   const dy = target.y - e.y;
@@ -157,7 +242,7 @@ export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Ve
         e.flash = 1;
         e.recoil = 1;
         e.charge = 0.3;
-        // shove the chassis back; planted feet absorb it
+        e.shake = 0.7;
         e.vx -= Math.cos(e.aim) * 120 * u;
         e.vy -= Math.sin(e.aim) * 120 * u;
         e.mode = COOL;
@@ -174,18 +259,18 @@ export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Ve
         e.dur = randRange(e, 1.2, 2.4);
       }
   }
-  // mechanical stepped aim with slight overshoot
+  // mechanical stepped aim with eased overshoot
   e.aimStepT -= dt;
   if (e.aimStepT <= 0 && aimRate > 0) {
-    e.aimStepT = 0.07 + rand(e) * 0.06;
+    e.aimStepT = 0.08 + rand(e) * 0.08;
     const d = wrapAngle(want - e.aim);
     e.aimGoal = e.aim + clamp(d * 1.12, -aimRate * 0.12, aimRate * 0.12);
   }
-  e.aim += wrapAngle(e.aimGoal - e.aim) * damp(30, dt);
+  e.aim += wrapAngle(e.aimGoal - e.aim) * damp(26, dt);
   e.recoil = Math.max(0, e.recoil - dt * 3);
   e.flash = Math.max(0, e.flash - dt * 9);
+  e.shake = Math.max(0, e.shake - dt * 4);
 
-  // re-anchor occasionally so it shuffles on its legs
   e.anchorT -= dt;
   if (e.anchorT <= 0) {
     e.anchorT = randRange(e, 2.5, 5);
@@ -206,22 +291,26 @@ export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Ve
   steer(e, dvx, dvy, 4, dt);
   e.x += e.vx * dt;
   e.y += e.vy * dt;
-  // chassis slowly yaws toward aim (forces feet to re-place)
   e.heading = turnToward(e.heading, e.aim, 0.6 * dt);
   updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
-  updateEye(e.eye, e, e.x, e.y, target, dt, 0.15);
+  updateEye(e.eye, e, e.x, e.y, target, dt, 0.15, e.charge);
   updateGlitch(e, dt, 0.3 + e.charge * 2, 0.05);
 }
 
 function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   const u = e.size / 70;
   const w = Math.max(0.8, 0.95 * Math.sqrt(u));
-  drawRig(ctx, e.rig, w, e.tremble * 0.5, 1);
+  const fill = silFill(e);
+  drawRig(ctx, e.rig, w * 1.15, e.tremble * 0.5, 1, time, fill);
+  if (e.shattered) return;
   const c = Math.cos(e.heading);
   const s = Math.sin(e.heading);
-  const tj = e.tremble ? (Math.random() - 0.5) * e.tremble : 0;
+  const tj = e.tremble ? Math.sin(time * 91) * e.tremble : 0;
   const bx = e.x + c * e.rig.offX - s * e.rig.offY + tj;
-  const by = e.y + s * e.rig.offX + c * e.rig.offY + tj;
+  const by = e.y + s * e.rig.offX + c * e.rig.offY - tj * 0.5;
+  const lw = Math.max(1, w);
+  const ca = Math.cos(e.aim);
+  const sa = Math.sin(e.aim);
 
   // aim line (charge tell)
   if (e.mode === CHARGE && e.charge > 0.05) {
@@ -232,89 +321,153 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
     ctx.beginPath();
     const l0 = 28 * u;
     const l1 = l0 + 260 * u * Math.min(1, e.charge * 1.6);
-    ctx.moveTo(bx + Math.cos(e.aim) * l0, by + Math.sin(e.aim) * l0);
-    ctx.lineTo(bx + Math.cos(e.aim) * l1, by + Math.sin(e.aim) * l1);
+    ctx.moveTo(bx + ca * l0, by + sa * l0);
+    ctx.lineTo(bx + ca * l1, by + sa * l1);
     ctx.stroke();
     ctx.setLineDash(NODASH);
   }
 
-  // hull
+  // chassis
   ctx.save();
   ctx.translate(bx, by);
   ctx.rotate(e.heading);
-  polyPath(ctx, e.hull, 1, 1);
-  ctx.fillStyle = PAL.body;
-  ctx.fill();
-  ctx.lineWidth = w * 1.3;
-  ctx.strokeStyle = orangeA(0.8);
-  ctx.stroke();
-  // plating + vents
-  ctx.lineWidth = w * 0.8;
-  ctx.strokeStyle = PAL.grayMid;
+  // breathing core ring (visible through the plate gaps)
+  const cg = 0.1 + 0.12 * Math.sin(time * 2.2 + e.seed) + e.charge * 0.85;
+  ctx.strokeStyle = coreColor(cg);
+  ctx.lineWidth = 1.8 * u;
   ctx.beginPath();
-  ctx.moveTo(-14 * u, -2 * u);
-  ctx.lineTo(-6 * u, -10 * u);
-  ctx.moveTo(-12 * u, 6 * u);
-  ctx.lineTo(4 * u, 10 * u);
+  ctx.arc(0, 0, 13 * u, 0, TAU);
+  ctx.stroke();
+  // plates batched, each rattles on shake / spreads with charge
+  const spread = (e.charge * 1.2 + e.shake * 1.5) * u;
+  ctx.beginPath();
   for (let i = 0; i < 4; i++) {
-    ctx.moveTo((-13 + i * 2) * u, 0);
-    ctx.lineTo((-13 + i * 2) * u, 4 * u);
+    const a = (i + 0.5) * (TAU / 4) - TAU / 4;
+    const j = e.shake > 0 ? Math.sin(time * 70 + i * 3) * e.shake * 1.2 * u : 0;
+    polySub(ctx, e.plates[i], Math.cos(a) * spread + j, Math.sin(a) * spread - j);
   }
+  polySub(ctx, e.frag, 15.5 * u + Math.sin(time * 1.9) * 0.8 * u, 11.5 * u + Math.cos(time * 1.3) * 0.6 * u);
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.lineWidth = lw;
+  ctx.lineJoin = 'miter';
+  ctx.strokeStyle = edgeA(e, 0.85);
   ctx.stroke();
-  // core ring
-  ctx.strokeStyle = coreColor(e.charge);
-  ctx.lineWidth = 2.2 * u;
+  // vents + rivets
+  ctx.strokeStyle = PAL.grayMid;
+  ctx.lineWidth = Math.max(0.6, w * 0.8);
   ctx.beginPath();
-  ctx.arc(0, 0, 9.5 * u, 0, TAU);
+  for (let i = 0; i < 4; i++) {
+    ctx.moveTo((-15 + i * 2) * u, -1 * u);
+    ctx.lineTo((-15 + i * 2) * u, 2 * u);
+  }
+  ctx.moveTo(6 * u, -12 * u);
+  ctx.lineTo(10 * u, -9 * u);
   ctx.stroke();
+  // antenna needles with off-white tips (one sways)
+  const sway = Math.sin(time * 1.6 + e.seed) * 0.25;
+  const a1x = -14 * u + Math.cos(Math.PI + 0.5 + sway) * 13 * u;
+  const a1y = -8 * u + Math.sin(Math.PI + 0.5 + sway) * 13 * u;
+  ctx.strokeStyle = orangeA(0.7);
+  ctx.beginPath();
+  ctx.moveTo(-14 * u, -8 * u);
+  ctx.lineTo(a1x, a1y);
+  ctx.moveTo(-12 * u, 9 * u);
+  ctx.lineTo(-22 * u, 14 * u);
+  ctx.stroke();
+  ctx.fillStyle = whiteA(0.9);
+  const ts = Math.max(1, 1.2 * u);
+  ctx.fillRect(a1x - ts / 2, a1y - ts / 2, ts, ts);
+  ctx.fillRect(-22 * u - ts / 2, 14 * u - ts / 2, ts, ts);
   ctx.restore();
-  drawGlow(ctx, bx, by, (12 + e.charge * 18) * u, 0.15 + e.charge * 0.7);
+  // second eye on the rear-left plate opens while charging
+  const s2x = -9 * u;
+  const s2y = -9.5 * u;
+  drawChargeEye(ctx, bx + c * s2x - s * s2y, by + s * s2x + c * s2y, 2.4 * u, e.eye, e.charge, e.heading + 0.8);
 
-  // turret
+  // lens tower: three tiers, each shifted along the aim (parallax height)
+  const rc = e.recoil * 5 * u;
   ctx.save();
   ctx.translate(bx, by);
   ctx.rotate(e.aim);
-  const rc = e.recoil * 5 * u;
-  ctx.fillStyle = PAL.bodyHi;
-  ctx.strokeStyle = orangeA(0.9);
-  ctx.lineWidth = w;
+  ctx.lineJoin = 'miter';
+  // tier 1: hull octagon
   ctx.beginPath();
-  ctx.moveTo(9 * u - rc * 0.3, -5 * u);
-  ctx.lineTo(9 * u - rc * 0.3, 5 * u);
-  ctx.lineTo(-3 * u, 7.5 * u);
-  ctx.lineTo(-8 * u, 0);
-  ctx.lineTo(-3 * u, -7.5 * u);
-  ctx.closePath();
+  polySub(ctx, e.hull, -rc * 0.3, 0);
+  ctx.fillStyle = fill;
   ctx.fill();
+  ctx.lineWidth = lw;
+  ctx.strokeStyle = edgeA(e, 0.7);
   ctx.stroke();
-  // barrel: twin rails
-  ctx.strokeStyle = PAL.grayMid;
+  // barrel rails (under the top tiers)
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = orangeA(0.7);
+  ctx.lineWidth = w * 1.4 + 2;
+  ctx.beginPath();
+  ctx.moveTo(8 * u - rc, -2 * u);
+  ctx.lineTo(27 * u - rc, -2 * u);
+  ctx.moveTo(8 * u - rc, 2 * u);
+  ctx.lineTo(27 * u - rc, 2 * u);
+  ctx.stroke();
+  ctx.strokeStyle = fill;
   ctx.lineWidth = w * 1.4;
-  ctx.beginPath();
-  ctx.moveTo(8 * u - rc, -1.8 * u);
-  ctx.lineTo(27 * u - rc, -1.8 * u);
-  ctx.moveTo(8 * u - rc, 1.8 * u);
-  ctx.lineTo(27 * u - rc, 1.8 * u);
   ctx.stroke();
-  ctx.strokeStyle = orangeA(0.9);
-  ctx.lineWidth = w * 0.8;
-  ctx.beginPath();
-  ctx.moveTo(24 * u - rc, -3 * u);
-  ctx.lineTo(24 * u - rc, 3 * u);
-  ctx.stroke();
-  // charge creeping along the rails
   if (e.charge > 0.05) {
     ctx.fillStyle = coreColor(e.charge);
     const l = 19 * u * e.charge;
-    ctx.fillRect(8 * u - rc, -0.7 * u, l, 1.4 * u);
+    ctx.fillRect(8 * u - rc, -2.6 * u, l, 1.2 * u);
+    ctx.fillRect(8 * u - rc, 1.4 * u, l * 0.9, 1.2 * u);
   }
+  ctx.strokeStyle = whiteA(0.85);
+  ctx.lineWidth = Math.max(0.8, w * 0.8);
+  ctx.beginPath();
+  ctx.moveTo(25 * u - rc, -3.2 * u);
+  ctx.lineTo(25 * u - rc, 3.2 * u);
+  ctx.stroke();
+  // tier 2: hexagon offset forward
+  const t2 = 1.6 * u - rc * 0.5;
+  ctx.beginPath();
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * TAU + Math.PI / 6;
+    const r = 7.6 * u;
+    if (k === 0) ctx.moveTo(t2 + Math.cos(a) * r, Math.sin(a) * r);
+    else ctx.lineTo(t2 + Math.cos(a) * r, Math.sin(a) * r);
+  }
+  ctx.closePath();
+  ctx.fillStyle = PAL.bodyHi;
+  ctx.fill();
+  ctx.strokeStyle = edgeA(e, 0.9);
+  ctx.stroke();
+  // tier 3: lens bezel ring with ticks (slowly rotating)
+  const t3 = 3 * u - rc * 0.6;
+  ctx.strokeStyle = PAL.grayMid;
+  ctx.lineWidth = Math.max(0.8, 1.6 * u);
+  ctx.beginPath();
+  ctx.arc(t3, 0, 5.8 * u, 0, TAU);
+  ctx.stroke();
+  ctx.strokeStyle = orangeA(0.8);
+  ctx.lineWidth = Math.max(0.6, 0.7 * u);
+  ctx.beginPath();
+  const rot = time * (0.6 + e.charge * 5);
+  for (let k = 0; k < 8; k++) {
+    const a = rot + (k / 8) * TAU;
+    ctx.moveTo(t3 + Math.cos(a) * 5.2 * u, Math.sin(a) * 5.2 * u);
+    ctx.lineTo(t3 + Math.cos(a) * 6.6 * u, Math.sin(a) * 6.6 * u);
+  }
+  ctx.stroke();
   ctx.restore();
-  const mx = bx + Math.cos(e.aim) * (27 * u - rc);
-  const my = by + Math.sin(e.aim) * (27 * u - rc);
-  drawEye(ctx, bx, by, 4.2 * u, e.eye, e.charge, 0.2);
-  if (e.mode === CHARGE) drawGlow(ctx, mx, my, (4 + e.charge * 8) * u, e.charge * 0.8);
+  // lens = eye (focal point)
+  const lx = bx + ca * (3 * u - rc * 0.6);
+  const ly = by + sa * (3 * u - rc * 0.6);
+  drawEye(ctx, lx, ly, 4.6 * u, e.eye, e.charge, 0.25 + e.charge * 0.5, e.aim + Math.PI / 2);
+
+  // single glow: muzzle while charging / firing, else the core
+  const mx = bx + ca * (27 * u - rc);
+  const my = by + sa * (27 * u - rc);
+  if (e.flash > 0) drawGlow(ctx, mx, my, (10 + e.flash * 22) * u, e.flash);
+  else if (e.mode === CHARGE) drawGlow(ctx, mx, my, (5 + e.charge * 10) * u, 0.2 + e.charge * 0.8);
+  else drawGlow(ctx, bx, by, (14 + e.charge * 10) * u, 0.14 + 0.06 * Math.sin(time * 2.2 + e.seed));
   if (e.flash > 0) {
-    drawGlow(ctx, mx, my, (10 + e.flash * 22) * u, e.flash);
     ctx.strokeStyle = whiteA(e.flash);
     ctx.lineWidth = Math.max(0.8, u);
     ctx.beginPath();
@@ -329,7 +482,13 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
 }
 
 export function drawSentinel(ctx: Ctx2D, e: Sentinel, time: number): void {
-  drawGlitched(ctx, e, time, e.size * 1.2, drawBody);
+  if (e.deathT >= 0) drawTrail(ctx, e);
+  drawGlitched(ctx, e, time, e.size * 1.25, drawBody);
+  if (e.shattered) {
+    drawDebris(ctx, e.debris, time);
+    const p = (e.deathT - DEATH_COLLAPSE) / 0.5;
+    if (p < 1) drawGlow(ctx, e.x, e.y, (18 + p * 30) * (e.size / 70), (1 - clamp(p, 0, 1)) * 0.95);
+  }
 }
 
 export function drawSentinelDebug(ctx: Ctx2D, e: Sentinel): void {

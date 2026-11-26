@@ -1,93 +1,55 @@
-// Shared types and tuning constants for Cyber Defender.
+// Shared types, pool sizes and palette for Cyber Defender (vertical shooter).
+import type { Enemy, EnemyKind } from './enemies';
 
-export type Phase = 'menu' | 'playing' | 'paused' | 'over';
-export type EnemyKind = 'crawler' | 'mite' | 'brooder' | 'brute' | 'boss';
+/** React-visible screens. Everything else lives in refs. */
+export type Phase = 'menu' | 'playing' | 'paused' | 'map' | 'pick' | 'anomaly' | 'summary';
+
 export type SfxName =
   | 'shot'
   | 'hit'
   | 'death'
   | 'bigDeath'
   | 'damage'
+  | 'shieldHit'
   | 'wave'
   | 'boss'
   | 'clear'
   | 'emp'
   | 'empReady'
   | 'combo'
-  | 'gameover';
+  | 'gameover'
+  | 'pickup'
+  | 'select'
+  | 'click'
+  | 'sector'
+  | 'enemyShot'
+  | 'laser'
+  | 'dash'
+  | 'latch'
+  | 'synergy'
+  | 'victory'
+  | 'zap';
 
-export interface Leg {
-  /** hip position in enemy-local space (+x = forward) */
-  lx: number;
-  ly: number;
-  /** resting foot position in enemy-local space */
-  rx: number;
-  ry: number;
-  l1: number;
-  l2: number;
-  /** planted / animated foot in world space */
-  fx: number;
-  fy: number;
-  sx: number;
-  sy: number;
-  tx: number;
-  ty: number;
-  /** step progress, >= 1 means planted */
-  t: number;
-  group: number;
-}
+/** Logical playfield width; height adapts to the aspect ratio. */
+export const FIELD_W = 600;
+export const FIELD_MIN_H = 760;
 
-export interface Enemy {
-  active: boolean;
-  kind: EnemyKind;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  kx: number;
-  ky: number;
-  heading: number;
-  r: number;
-  hp: number;
-  maxHp: number;
-  speed: number;
-  t: number;
-  seed: number;
-  bits: number;
-  flash: number;
-  glitch: number;
-  legs: Leg[];
-  legCount: number;
-  stepDur: number;
-  stride: number;
-  gait: number;
-  empHit: number;
-  atk: number;
-  brood: number;
-  orbitDir: number;
-}
+export const TAU = Math.PI * 2;
 
-export interface Bullet {
-  active: boolean;
-  x: number;
-  y: number;
-  px: number;
-  py: number;
-  vx: number;
-  vy: number;
-  life: number;
-  dmg: number;
-}
+// ---------------------------------------------------------------- palette
+export const ORANGE = '#f07e41';
+export const CORE = '#ff5a2a';
+export const CORE_DIM = '#8a1c12';
+export const WHITE = '#f4efe8';
+export const GRAY = '#6a6a6a';
 
-export interface Shot {
-  active: boolean;
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  r: number;
-}
+/** Particle colour indices */
+export const C_ORANGE = 0;
+export const C_RED = 1;
+export const C_WHITE = 2;
+export const C_GRAY = 3;
+export const C_HOT = 4;
+export const PALETTE = [ORANGE, CORE, WHITE, '#4a4a4f', '#ffb48a'];
 
 /** Particle kinds */
 export const P_SPARK = 0;
@@ -96,14 +58,6 @@ export const P_EMBER = 2;
 export const P_RING = 3;
 export const P_HEX = 4;
 export const P_GLITCH = 5;
-
-/** Palette indices: orange, red, white, gray, hot orange */
-export const C_ORANGE = 0;
-export const C_RED = 1;
-export const C_WHITE = 2;
-export const C_GRAY = 3;
-export const C_HOT = 4;
-export const PALETTE = ['#f07e41', '#e5383b', '#ffffff', '#5c5c64', '#ffc2a0'];
 
 export interface Particle {
   active: boolean;
@@ -131,42 +85,167 @@ export interface FloatText {
   big: boolean;
 }
 
-export interface KindStats {
-  r: number;
-  hp: number;
-  speed: number;
-  legs: number;
+export interface PBullet {
+  active: boolean;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
   dmg: number;
-  score: number;
-  charge: number;
-  knock: number;
-  stepDur: number;
-  reach: number;
-  thorax: number;
-  mount: number;
+  pierce: number;
+  size: number;
+  homing: number;
+  life: number;
+  crit: boolean;
+  drone: boolean;
+  lastHit: number;
+  target: number;
+  retarget: number;
 }
 
-export const KINDS: Record<EnemyKind, KindStats> = {
-  crawler: { r: 10, hp: 1, speed: 82, legs: 6, dmg: 6, score: 10, charge: 0.035, knock: 1, stepDur: 0.085, reach: 2.1, thorax: 0.15, mount: 0.42 },
-  mite: { r: 6, hp: 1, speed: 100, legs: 6, dmg: 3, score: 5, charge: 0.015, knock: 1.2, stepDur: 0.07, reach: 2.2, thorax: 0.15, mount: 0.42 },
-  brooder: { r: 15, hp: 4, speed: 44, legs: 8, dmg: 12, score: 35, charge: 0.08, knock: 0.6, stepDur: 0.13, reach: 1.9, thorax: 0.55, mount: 0.4 },
-  brute: { r: 21, hp: 9, speed: 30, legs: 8, dmg: 22, score: 70, charge: 0.12, knock: 0.15, stepDur: 0.19, reach: 1.75, thorax: 0.05, mount: 0.6 },
-  boss: { r: 46, hp: 150, speed: 26, legs: 8, dmg: 40, score: 2000, charge: 0.6, knock: 0, stepDur: 0.26, reach: 1.9, thorax: 0.35, mount: 0.5 },
-};
+/** Enemy projectile kinds */
+export const EB_ORB = 0;
+export const EB_PELLET = 1;
+export const EB_NEEDLE = 2;
 
-export const POOL_ENEMIES = 180;
-export const POOL_BULLETS = 128;
-export const POOL_SHOTS = 96;
-export const POOL_PARTICLES = 900;
-export const POOL_TEXTS = 24;
+export interface EBullet {
+  active: boolean;
+  kind: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  life: number;
+  t: number;
+}
 
-export const TAU = Math.PI * 2;
+/** Pickup kinds (timed buffs + instant repair) */
+export const PK_RAPID = 0;
+export const PK_SHIELD = 1;
+export const PK_OVERCLOCK = 2;
+export const PK_REPAIR = 3;
 
-export interface GameResult {
+export interface Pickup {
+  active: boolean;
+  kind: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  t: number;
+}
+
+export interface Arc {
+  active: boolean;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+  seed: number;
+}
+
+// ---------------------------------------------------------------- units
+export const U_ENTER = 0; // walking / flying in from an edge
+export const U_ACT = 1; // type behaviour (zig-zag, hold station, drift)
+export const U_HUNT = 2; // closing on the player (crawler stalk, leech seek)
+export const U_STRIKE = 3; // wraith phased out and relocating
+export const U_LATCH = 4; // leech draining the player
+export const U_RETREAT = 5; // backing off after a latch / strike
+export const U_SWOOP = 6; // flyer following a swoop path (via intent)
+export const U_FREE = 7; // fragments: library-driven darting
+export const U_DYING = 8; // death animation playing (killEnemy), until e.done
+export const U_BOSS = 9;
+
+export type SpawnFrom = 'top' | 'walls' | 'corners' | 'edges' | 'sides' | 'phase' | 'swoop' | 'cluster' | 'boss';
+
+/** Game-side wrapper around a library enemy. Movement is intent-only. */
+export interface Unit {
+  id: number;
+  e: Enemy;
+  kind: EnemyKind;
+  state: number;
+  from: SpawnFrom;
+  hp: number;
+  maxHp: number;
+  r: number;
+  /** current goal point */
+  gx: number;
+  gy: number;
+  baseX: number;
+  // swoop path (flyers only; followed with intent, never by setting x/y)
+  p0x: number;
+  p0y: number;
+  p1x: number;
+  p1y: number;
+  p2x: number;
+  p2y: number;
+  p3x: number;
+  p3y: number;
+  pt: number;
+  pdur: number;
+  delay: number;
+  t: number;
+  stateT: number;
+  actT: number;
+  shotT: number;
+  /** shot tell: seconds left, locked aim, payload */
+  tellT: number;
+  tellA: number;
+  tellKind: number;
+  tellN: number;
+  tellSpread: number;
+  tellSpeed: number;
+  cluster: number;
+  cidx: number;
+  side: number;
+  flash: number;
+  elite: boolean;
+  score: number;
+  contact: number;
+  pulseHit: number;
+  dead: boolean;
+  life: number;
+}
+
+export const MAX_UNITS = 72;
+/** max shot tells / bursts are short; enemies only shoot from fully on-screen positions */
+export const TELL_TIME = 0.42;
+export const POOL_PBULLETS = 320;
+export const POOL_EBULLETS = 360;
+export const POOL_PARTICLES = 1100;
+export const POOL_TEXTS = 32;
+export const POOL_PICKUPS = 16;
+export const POOL_ARCS = 40;
+
+// ---------------------------------------------------------------- run / routes
+export type NodeType = 'fight' | 'elite' | 'repair' | 'cache' | 'anomaly' | 'boss';
+
+export type OfferSource = 'wave' | 'elite' | 'cache' | 'boss' | 'anomaly';
+
+export interface OwnedUpgrade {
+  id: string;
+  stacks: number;
+}
+
+export interface RunSummary {
+  victory: boolean;
   score: number;
   best: number;
   newBest: boolean;
+  seed: number;
+  seedStr: string;
+  sector: number;
+  sectorName: string;
   wave: number;
+  wavesCleared: number;
   kills: number;
   maxCombo: number;
+  time: number;
+  build: OwnedUpgrade[];
+  synergies: string[];
 }
+
+export type { Enemy, EnemyKind };
