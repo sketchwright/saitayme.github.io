@@ -425,6 +425,15 @@ export class Renderer {
       const e = u.e;
       if (e.y < -140 || e.y > g.FH + 140) continue;
       c.globalAlpha = 1;
+      if (u.stunT > 0) {
+        // stunned: frozen pose, jitter and a dim flicker
+        c.save();
+        c.translate((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3);
+        c.globalAlpha = 0.45 + 0.35 * Math.random();
+        drawEnemy(c, e, g.time);
+        c.restore();
+        continue;
+      }
       drawEnemy(c, e, g.time);
     }
     c.globalAlpha = 1;
@@ -560,6 +569,12 @@ export class Renderer {
           if (k === 0) c.moveTo(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr);
           else c.lineTo(e.x + Math.cos(a) * rr, e.y + Math.sin(a) * rr);
         }
+        c.stroke();
+        // ring timer: how much stun is left
+        c.strokeStyle = 'rgba(244,239,232,0.9)';
+        c.lineWidth = 2;
+        c.beginPath();
+        c.arc(e.x, e.y, u.r + 12, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, u.stunT / u.stunMax));
         c.stroke();
       }
       if (u.role === 'sniper' || u.role === 'suppressor') {

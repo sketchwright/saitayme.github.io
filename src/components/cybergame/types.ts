@@ -236,6 +236,8 @@ export interface Unit {
   hunted: boolean;
   /** EMP stun seconds left */
   stunT: number;
+  /** duration of the current stun (for the ring timer) */
+  stunMax: number;
 }
 
 export const MAX_UNITS = 72;

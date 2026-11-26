@@ -1107,6 +1107,7 @@ export class Game implements BossHost {
       phaseCd: rand(2, 4),
       hunted: false,
       stunT: 0,
+      stunMax: 1,
     };
     this.units.push(u);
     return u;
@@ -1897,8 +1898,10 @@ export class Game implements BossHost {
         u.stunT -= dt;
         u.tellT = 0;
         u.pt = 0;
-        if (e.kind === 'sentinel' && e.mode !== 0) e.modeT = 0;
-        updateEnemy(e, dt, target, HOLD);
+        e.vx = 0;
+        e.vy = 0;
+        e.kvx = 0;
+        e.kvy = 0;
         e.charge = 0;
         if (Math.random() < dt * 6) this.particle(P_SPARK, e.x + rand(-u.r, u.r), e.y + rand(-u.r, u.r), rand(-60, 60), rand(-60, 60), 0.15, 1, C_WHITE, 4);
         continue;
@@ -2228,6 +2231,7 @@ export class Game implements BossHost {
       phaseCd: 3,
       hunted: false,
       stunT: 0,
+      stunMax: 1,
     };
   }
 
@@ -3085,7 +3089,8 @@ export class Game implements BossHost {
   /** EMP: stuns, strips shields, clears enemy shots. Small capped damage; bosses only get interrupted. */
   private updatePulse(dt: number): void {
     if (this.pulseR < 0) return;
-    const maxR = 380 * this.stats.pulseRadius;
+    // full-field reach from the ship (the old 380 only covered the lower half, where few enemies sit)
+    const maxR = 900 * this.stats.pulseRadius;
     this.pulseR += 1100 * dt;
     const r2 = this.pulseR * this.pulseR;
     const siphon = this.syn.has('pulseLeech');
@@ -3100,7 +3105,11 @@ export class Game implements BossHost {
         if (this.bc) this.bc.interrupt(u.e);
         continue;
       }
-      u.stunT = u.elite ? this.stats.pulseStun * 0.55 : this.stats.pulseStun;
+      u.stunT = u.stunMax = u.elite ? this.stats.pulseStun * 0.55 : this.stats.pulseStun;
+      u.phaseT = 0;
+      u.tellT = 0;
+      u.pt = 0;
+      this.text(u.e.x, u.e.y - u.r - 14, 'STUNNED', C_WHITE, false);
       u.ward = 0;
       if (u.role === 'shieldBearer' && u.dome > 0) {
         u.dome = 0;
