@@ -160,7 +160,14 @@ interface BossState {
   spin: number;
   /** tell before an attack: core brightens, aim line for aimed attacks */
   windup: number;
+  /** seconds left of the exposed-core window (bonus damage) */
+  vuln: number;
+  openingBurst: boolean;
 }
+
+/** Exposed-core window after each boss attack and its damage multiplier. */
+export const VULN_TIME = 3;
+export const VULN_MULT = 1.5;
 
 const tmpV: Vec = { x: 0, y: 0 };
 const intentV: Vec = { x: 0, y: 0 };
@@ -1121,7 +1128,7 @@ export class Game {
           u.pt = 0;
         } else u.state = U_ACT;
       }
-      if (g.kind === 'leech' && g.from === 'boss') u.state = U_HUNT;
+      if ((g.kind === 'leech' || g.kind === 'crawler') && g.from === 'boss') u.state = U_HUNT;
       if (u.delay <= 0) spawnEnemy(u.e);
     }
     return made;
@@ -1254,6 +1261,12 @@ export class Game {
               u.state = U_HUNT;
               u.stateT = 0;
               u.actT = rand(0.8, 2);
+            }
+          } else if (u.state === U_HUNT && u.from === 'boss') {
+            // boss summons: kamikaze straight at the ship through the firing line
+            if (e.mode === 0) {
+              intent = this.goal(u, this.px, this.py, 86);
+              if (playing && dp < 72) crawlerLunge(e);
             }
           } else if (u.state === U_HUNT) {
             if (e.mode !== 0) {
@@ -1610,6 +1623,8 @@ export class Game {
       dying: -1,
       spin: 0,
       windup: 0,
+      vuln: 0,
+      openingBurst: false,
     };
     spawnEnemy(e);
     this.waveActive = true;
@@ -1673,7 +1688,12 @@ export class Game {
       return;
     }
     if (bs.inv > 0) bs.inv -= dt;
+    if (bs.vuln > 0) bs.vuln -= dt;
     if (bs.entering > 0) return;
+    if (!bs.openingBurst) {
+      bs.openingBurst = true;
+      this.bossSummon(u, 2);
+    }
 
     // phase transitions
     const frac = u.hp / u.maxHp;
@@ -1693,7 +1713,8 @@ export class Game {
       this.say(bs.phase === 1 ? 'SHELL FRACTURED' : 'CORE EXPOSED', `${def.name} // PHASE ${bs.phase + 1}`, true, 2.2);
       this.ev.sound('boss');
       this.pushLog(`${def.name.toLowerCase()} phase ${bs.phase + 1}`);
-      this.bossSummon(u, 1 + bs.phase);
+      bs.vuln = 0;
+      this.bossSummon(u, 2 + bs.phase);
       return;
     }
 
@@ -1753,7 +1774,10 @@ export class Game {
     const ph = bs.phase;
     const end = (gap: number) => {
       bs.attack = null;
-      bs.gap = bs.def.attackGap * gap * (1 - ph * 0.12);
+      // core exposed: attack-free window with bonus damage
+      bs.vuln = VULN_TIME;
+      bs.gap = Math.max(VULN_TIME + 0.3, bs.def.attackGap * gap * (1 - ph * 0.12));
+      this.sfx('empReady');
     };
     switch (bs.attack) {
       case 'ring': {
@@ -1831,11 +1855,8 @@ export class Game {
         break;
       }
       case 'summon':
-        if (bs.atkStep === 0) {
-          bs.atkStep = 1;
-          this.bossSummon(u, 2 + ph);
-        }
-        if (t > 0.8) end(1.4);
+        // summons only come in bursts at phase changes
+        end(0.5);
         break;
       case 'rain': {
         const dur = 2.6;
@@ -1907,6 +1928,10 @@ export class Game {
   // ================================================================ damage
   private hitUnit(u: Unit, dmg: number, crit: boolean, x: number, y: number, chain: number, dx = 0, dy = -1): void {
     if (u.dead || u.state === U_DYING) return;
+    if (u.state === U_BOSS && this.bs && this.bs.vuln > 0) {
+      dmg *= VULN_MULT;
+      if (Math.random() < 0.3) this.sparks(x, y, -Math.PI / 2, 1.6, 2, 80, 260, C_WHITE);
+    }
     u.hp -= dmg;
     u.flash = 0.08;
     hurtEnemy(u.e, dx, dy, clamp((dmg / u.maxHp) * 3, 0.3, 1));

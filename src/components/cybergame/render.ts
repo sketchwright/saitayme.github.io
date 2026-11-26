@@ -586,6 +586,19 @@ export class Renderer {
       c.stroke();
       c.globalAlpha = 1;
     }
+    if (bs && b && bs.vuln > 0 && b.state !== U_DYING) {
+      // exposed core: bright pulsing ring + hot glow on the eye
+      const c = this.ctx;
+      const pulse = 0.5 + 0.5 * Math.sin(g.time * 12);
+      this.glow(this.glowW, b.e.x, b.e.y, b.r * (1.1 + pulse * 0.3), 0.35 + pulse * 0.25);
+      c.globalAlpha = 0.55 + pulse * 0.35;
+      c.strokeStyle = WHITE;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(b.e.x, b.e.y, b.r * 0.75 + pulse * 6, 0, TAU);
+      c.stroke();
+      c.globalAlpha = 1;
+    }
     if (bs && b && bs.inv > 0) {
       const c = this.ctx;
       c.globalAlpha = 0.5 + 0.3 * Math.sin(g.time * 30);
@@ -1117,7 +1130,8 @@ export class Renderer {
     if (b && bs && !b.dead) {
       const w = Math.min(420, (wide ? fr - fl : W) - 60);
       const y = pad + (small ? 40 : 44);
-      this.label(`${bs.def.name} // ${bs.def.title}`, cx, y, 'center', CORE, 9);
+      const exposed = bs.vuln > 0;
+      this.label(exposed ? `CORE EXPOSED // x1.5 DAMAGE // ${bs.vuln.toFixed(1)}s` : `${bs.def.name} // ${bs.def.title}`, cx, y, 'center', exposed ? (Math.sin(g.time * 10) > 0 ? WHITE : ORANGE) : CORE, 9);
       c.fillStyle = 'rgba(255,90,42,0.15)';
       c.fillRect(cx - w / 2, y + 6, w, 5);
       c.fillStyle = bs.inv > 0 ? WHITE : CORE;
