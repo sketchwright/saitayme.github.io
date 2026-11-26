@@ -19,7 +19,6 @@ import {
   clamp,
   coreColor,
   damp,
-  drawChargeEye,
   drawDebris,
   drawEye,
   drawGlitched,
@@ -51,6 +50,8 @@ import {
 import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
 
 export const CRAWLER_SIZE = 56;
+/** body plates are drawn at this multiple of the size unit (body dominates the silhouette) */
+const BK = 1.7;
 
 const STALK = 0;
 const FREEZE = 1;
@@ -59,10 +60,12 @@ const RECOVER = 3;
 const LUNGE_TIME = 0.36;
 
 // local polygons at size 56 (+x forward)
-const NOSE = [21, 0.6, 10, -5.2, 2.5, -6.6, 3.4, -1.8, 0.6, 4.6, 5.6, 3.1, 8, 5.9];
-const THORAX = [-0.6, -8, -9.5, -6.4, -14, -0.8, -10.5, 6, -3.2, 7.4, -1.6, 2.4];
-const TAIL = [1, -3.4, -8.5, -2.2, -12.5, 1.6, -4, 4.4];
-const FRAG_ANCHORS = [4.5, -10.5, -6, 10, -16.5, -5.5];
+// broken data shard: an angular front slab (chunk bitten out of its right
+// edge) and a stepped rear block, in body units (x BK)
+const NOSE = [16, 0.5, 10.5, -6.2, 2, -7.6, 3, -2.2, 0.6, 5.4, 5, 5.8, 6.4, 2.6, 9.2, 5.2];
+const THORAX = [-0.6, -8.4, -8.8, -7.4, -12.6, -3.4, -10.6, -2.6, -13.2, 1.8, -9, 7.4, -1.6, 7, -0.6, 2];
+const TAIL = [1, -3, -6, -2.2, -8.5, 1.4, -3, 3.6];
+const FRAG_ANCHORS = [6, -10, -6.5, 9.6, -15.5, -5];
 
 export interface Crawler extends EnemyBase {
   kind: 'crawler';
@@ -105,11 +108,12 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
   const legs: Leg[] = [];
   // [side, hipX, hipY, rest angle off forward (deg), reach, segs, group, drag]
   const specs: Array<[number, number, number, number, number, number, number, boolean]> = [
-    [-1, 9.5, -4.6, 42, 37, 4, 0, false], // left front: longest, reaches ahead
-    [-1, -2.5, -7.2, 95, 31, 3, 1, false], // left mid (thorax)
-    [-1, -11, -4.2, 148, 35, 4, 0, false], // left rear
-    [1, 4.2, 5.6, 58, 34, 4, 1, false], // right front
-    [1, -9, 6.2, 150, 24, 3, 0, true], // right rear: snapped, dragged
+    // lopsided: three working limbs along the left flank (uneven spacing),
+    // nothing on the right but a snapped stump dragging from the rear corner
+    [-1, 22.7, -9, 55, 26, 3, 0, false],
+    [-1, 6, -12.8, 98, 23, 3, 1, false],
+    [-1, -13, -11, 140, 26, 3, 0, false],
+    [1, -18, 11.3, 152, 17, 3, 1, true],
   ];
   for (const [side, hx0, hy0, deg, reach0, n, group, drag] of specs) {
     const hx = (hx0 + randRange(b, -1, 1)) * u;
@@ -118,17 +122,18 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
     const reach = (reach0 + randRange(b, -3, 4)) * u;
     const rx = hx + Math.cos(ang) * reach;
     const ry = hy + Math.sin(ang) * reach;
-    const total = reach * randRange(b, 1.32, 1.5);
-    const w = n === 3 ? [0.38, 0.37, 0.25] : [0.3, 0.28, 0.24, 0.18];
+    const total = reach * randRange(b, 1.7, 1.85); // slack: a lagging foot never hits max reach
+    const w = n === 3 ? [0.4, 0.36, 0.24] : [0.3, 0.28, 0.24, 0.18];
     const segs: number[] = [];
     for (let i = 0; i < n; i++) segs.push(total * w[i] * randRange(b, 0.9, 1.1));
     legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
   }
-  const rig = makeRig(legs, 8.5 * u, 0.13, 1.6);
+  const rig = makeRig(legs, 13 * u, 0.1, 1.5); // long stride + quick steps: three legs share one flank
+  rig.sag = 0.34; // fewer legs: the body lurches toward each lifted limb
   const frags: Float32Array[] = [];
   for (let i = 0; i < 3; i++) {
     const r = randRange(b, 1.6, 2.8);
-    frags.push(scaledPoly(b, [r * 1.3, 0, -r, -r * 0.8, -r * 0.5, r * 0.9], u, 0.8));
+    frags.push(scaledPoly(b, [r * 1.3, 0, -r, -r * 0.8, -r * 0.5, r * 0.9], u * BK, 0.8));
   }
   const e: Crawler = {
     ...b,
@@ -148,9 +153,9 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
     palpB: -0.3,
     palpT: 0,
     eye: makeEye(),
-    nose: scaledPoly(b, NOSE, u, 1.6),
-    thorax: scaledPoly(b, THORAX, u, 1.6),
-    tail: scaledPoly(b, TAIL, u, 1.2),
+    nose: scaledPoly(b, NOSE, u * BK, 1.2),
+    thorax: scaledPoly(b, THORAX, u * BK, 1.2),
+    tail: scaledPoly(b, TAIL, u * BK, 0.8),
     frags,
     fragOff: new Float32Array(6),
     fragT: 0.5,
@@ -169,7 +174,7 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
     const side = i % 2 ? 1 : -1;
     const y0 = side * randRange(e, 3, 6);
     const l = randRange(e, 6, 13);
-    sp.push(x0 * u, y0 * u, (x0 - l * 0.8) * u, (y0 + side * l * 0.55) * u);
+    sp.push(x0 * u * BK, y0 * u * BK, (x0 - l * 0.8) * u * BK, (y0 + side * l * 0.55) * u * BK);
   }
   e.spines = new Float32Array(sp);
   plantRig(rig, x, y, e.heading);
@@ -219,7 +224,7 @@ function dying(e: Crawler, dt: number, target: Vec): void {
     const c = e.heading;
     addDebrisPoly(d, e.nose, e.x, e.y, c, 1, e.x, e.y, 120 * u, e.vx, e.vy, e);
     addDebrisPoly(d, e.thorax, e.x, e.y, c, 1, e.x, e.y, 110 * u, e.vx, e.vy, e);
-    addDebrisPoly(d, e.tail, e.x - Math.cos(e.tailA) * 15 * u, e.y - Math.sin(e.tailA) * 15 * u, e.tailA, 1, e.x, e.y, 90 * u, 0, 0, e);
+    addDebrisPoly(d, e.tail, e.x - Math.cos(e.tailA) * 15 * u * BK, e.y - Math.sin(e.tailA) * 15 * u * BK, e.tailA, 1, e.x, e.y, 90 * u, 0, 0, e);
     burstGlyphs(e, e.x, e.y, 10, 150 * u);
   }
   updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
@@ -326,7 +331,7 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
       sqT = p < 0.45 ? 1.16 : 1;
       pullT = 3 * u;
       rig.splay = 1 - p * 0.6;
-      rig.skid = p > 0.4 ? 0.75 * (1 - p) * 2 : 0;
+      rig.skid = p > 0.4 ? Math.min(0.9, 0.75 * (1 - p) * 2 + 0.3) : 0.7; // planted feet scrape along through the whole lunge
       if (p >= 1) {
         e.mode = RECOVER;
         e.modeT = 0;
@@ -377,7 +382,7 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
   updateRig(rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
   const c = Math.cos(e.heading);
   const s = Math.sin(e.heading);
-  updateEye(e.eye, e, e.x + c * 9 * u, e.y + s * 9 * u, target, dt, 0.35, e.charge);
+  updateEye(e.eye, e, e.x + c * 10 * u * BK, e.y + s * 10 * u * BK, target, dt, 0.35, e.charge);
   updateGlitch(e, dt, 0.35 + e.charge * 2.2 + (e.mode === LUNGE ? 3 : 0), e.charge * 0.1);
   updateTrail(e, dt, 170 * u);
 }
@@ -399,15 +404,16 @@ function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   const bx = e.x + ox;
   const by = e.y + oy;
   const lw = Math.max(1, w);
+  const U = u * BK;
 
   // tail shard: lags behind on a short spine
   const ta = e.tailA;
-  const tx = bx - Math.cos(ta) * 15 * u;
-  const ty = by - Math.sin(ta) * 15 * u;
+  const tx = bx - Math.cos(ta) * 15 * U;
+  const ty = by - Math.sin(ta) * 15 * U;
   ctx.strokeStyle = orangeA(0.5);
   ctx.lineWidth = w;
   ctx.beginPath();
-  ctx.moveTo(bx - c * 10 * u, by - s * 10 * u);
+  ctx.moveTo(bx - c * 10 * U, by - s * 10 * U);
   ctx.lineTo(tx, ty);
   ctx.stroke();
   ctx.save();
@@ -427,23 +433,23 @@ function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   ctx.rotate(e.heading + e.tw);
   const breathe = 1 + Math.sin(time * 2.3 + e.seed) * 0.02;
   const sq = e.sq.x;
-  ctx.scale(sq * breathe, (1 / Math.sqrt(sq)) * (1 - e.rig.bob * 0.06));
+  ctx.scale(sq * breathe, (1 / Math.sqrt(sq)) * (1 - e.rig.bob * 0.1));
   // core: hot slit visible through the gap between the plates
-  const gap = (0.8 + e.charge * 1.8) * u;
+  const gap = (0.8 + e.charge * 1.8) * U;
   const cg = 0.12 + 0.12 * Math.sin(time * 3.1 + e.seed) + e.charge * 0.85;
   ctx.fillStyle = coreColor(cg);
-  ctx.fillRect(-1.6 * u, -5 * u, 2.4 * u, 10 * u);
+  ctx.fillRect(-1.6 * U, -5 * U, 2.4 * U, 10 * U);
   // sensor needles (twitching) with off-white tips
   ctx.lineWidth = Math.max(0.6, w * 0.8);
   ctx.strokeStyle = orangeA(0.7);
   ctx.beginPath();
-  const n1x = 13 * u + Math.cos(-e.palpA) * 12 * u;
-  const n1y = -3 * u + Math.sin(-e.palpA) * 12 * u;
-  const n2x = 12 * u + Math.cos(-e.palpB) * 9 * u;
-  const n2y = 3 * u + Math.sin(-e.palpB) * 9 * u;
-  ctx.moveTo(13 * u, -3 * u);
+  const n1x = 13 * U + Math.cos(-e.palpA) * 12 * U;
+  const n1y = -3 * U + Math.sin(-e.palpA) * 12 * U;
+  const n2x = 12 * U + Math.cos(-e.palpB) * 9 * U;
+  const n2y = 3 * U + Math.sin(-e.palpB) * 9 * U;
+  ctx.moveTo(13 * U, -3 * U);
   ctx.lineTo(n1x, n1y);
-  ctx.moveTo(12 * u, 3 * u);
+  ctx.moveTo(12 * U, 3 * U);
   ctx.lineTo(n2x, n2y);
   // data spines
   const sp = e.spines;
@@ -453,7 +459,7 @@ function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   }
   ctx.stroke();
   ctx.fillStyle = whiteA(0.9);
-  const ts = Math.max(1, 1.2 * u);
+  const ts = Math.max(1, 1.2 * U);
   ctx.fillRect(n1x - ts * 0.5, n1y - ts * 0.5, ts, ts);
   ctx.fillRect(n2x - ts * 0.5, n2y - ts * 0.5, ts, ts);
   for (let i = 0; i < sp.length; i += 8) ctx.fillRect(sp[i + 2] - ts * 0.5, sp[i + 3] - ts * 0.5, ts, ts);
@@ -471,19 +477,19 @@ function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   ctx.strokeStyle = PAL.grayMid;
   ctx.lineWidth = Math.max(0.6, w * 0.7);
   ctx.beginPath();
-  ctx.moveTo(19 * u + gap * 0.5, 0.4 * u);
-  ctx.lineTo(6 * u + gap * 0.5, -1.2 * u);
-  ctx.lineTo(3.4 * u + gap * 0.5, -5.6 * u);
-  ctx.moveTo(-3 * u - gap * 0.5, -6.6 * u);
-  ctx.lineTo(-8 * u - gap * 0.5, 0);
-  ctx.lineTo(-4 * u - gap * 0.5, 6.2 * u);
+  ctx.moveTo(19 * U + gap * 0.5, 0.4 * U);
+  ctx.lineTo(6 * U + gap * 0.5, -1.2 * U);
+  ctx.lineTo(3.4 * U + gap * 0.5, -5.6 * U);
+  ctx.moveTo(-3 * U - gap * 0.5, -6.6 * U);
+  ctx.lineTo(-8 * U - gap * 0.5, 0);
+  ctx.lineTo(-4 * U - gap * 0.5, 6.2 * U);
   ctx.stroke();
   // loose fragments
   ctx.beginPath();
   const fo = e.fragOff;
   for (let i = 0; i < 3; i++) {
-    const fx = FRAG_ANCHORS[i * 2] * u + fo[i * 2] + Math.sin(time * 1.7 + i * 2.1) * 0.8 * u;
-    const fy = FRAG_ANCHORS[i * 2 + 1] * u + fo[i * 2 + 1];
+    const fx = FRAG_ANCHORS[i * 2] * U + fo[i * 2] + Math.sin(time * 1.7 + i * 2.1) * 0.8 * U;
+    const fy = FRAG_ANCHORS[i * 2 + 1] * U + fo[i * 2 + 1];
     polySub(ctx, e.frags[i], fx, fy);
   }
   ctx.fillStyle = fill;
@@ -493,14 +499,11 @@ function drawBody(ctx: Ctx2D, e: Crawler, time: number): void {
   ctx.stroke();
   ctx.restore();
 
-  const ex = bx + c * 9.5 * u;
-  const ey = by + s * 9.5 * u;
-  drawGlow(ctx, bx, by, (9 + e.charge * 15) * u, (dying ? 0.9 : 0.16 + e.charge * 0.75) * (0.9 + 0.1 * Math.sin(time * 3.1)));
-  drawEye(ctx, ex, ey, 3.8 * u, e.eye, e.charge, 0.55 + e.charge * 0.45, e.heading + Math.PI / 2);
-  // second eye on the thorax opens only while charging
-  const s2x = -7 * u;
-  const s2y = -2.8 * u;
-  drawChargeEye(ctx, bx + c * s2x - s * s2y, by + s * s2x + c * s2y, 2.1 * u, e.eye, e.charge, e.heading + Math.PI / 2);
+  const ex = bx + c * 10 * U;
+  const ey = by + s * 10 * U;
+  drawGlow(ctx, bx, by, (7 + e.charge * 12) * U, (dying ? 0.9 : 0.16 + e.charge * 0.75) * (0.9 + 0.1 * Math.sin(time * 3.1)));
+  // the single focal point: bright even at idle so it reads at 40 px
+  drawEye(ctx, ex, ey, 4 * U, e.eye, Math.max(0.65, e.charge), 0.55 + e.charge * 0.45, e.heading + Math.PI / 2);
 }
 
 export function drawCrawler(ctx: Ctx2D, e: Crawler, time: number): void {

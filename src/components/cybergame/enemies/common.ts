@@ -267,7 +267,7 @@ export const spawnBase = (e: EnemyBase): void => {
 
 /** Silhouette fill: near-black, or the hit-flash ramp (white > hot > dim red). */
 export const silFill = (e: EnemyBase): string =>
-  e.hurtT > 0.82 ? PAL.white : e.hurtT > 0.5 ? PAL.coreHot : e.hurtT > 0.28 ? PAL.coreDim : PAL.void;
+  e.hurtT > 0.82 ? PAL.white : e.hurtT > 0.5 ? PAL.coreHot : e.hurtT > 0.28 ? PAL.coreDim : PAL.plate;
 /** Edge colour honouring the hit flash. */
 export const edgeA = (e: EnemyBase, a: number): string => (e.hurtT > 0.5 ? whiteA(a) : orangeA(a));
 

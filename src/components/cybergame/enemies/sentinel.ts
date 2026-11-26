@@ -20,7 +20,6 @@ import {
   clamp,
   coreColor,
   damp,
-  drawChargeEye,
   drawDebris,
   drawEye,
   drawGlitched,
@@ -52,6 +51,8 @@ import {
 import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
 
 export const SENTINEL_SIZE = 70;
+/** chassis / tower are drawn at this multiple of the size unit */
+const BK = 1.5;
 
 const TRACK = 0;
 const CHARGE = 1;
@@ -101,10 +102,11 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
   const legs: Leg[] = [];
   // side, hipX, hipY, rest angle off forward (deg), reach, group, drag
   const specs: Array<[number, number, number, number, number, number, boolean]> = [
-    [-1, 11, -12, 52, 40, 0, false],
-    [-1, -10, -12.5, 128, 37, 1, false],
-    [1, 8, 12.5, 70, 43, 1, false],
-    [1, -12, 9.5, 140, 27, 0, true],
+    // three stilts at irregular points: a long one front-left, a long one
+    // from the right flank, and a buckled stump dragging from the rear-left
+    [-1, 16.7, -17.8, 58, 25, 0, false],
+    [1, 2.2, 23.3, 92, 27, 1, false],
+    [-1, -21, -12.2, 150, 17, 1, true],
   ];
   for (const [side, hx0, hy0, deg, reach0, group, drag] of specs) {
     const hx = hx0 * u;
@@ -113,11 +115,12 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
     const reach = (reach0 + randRange(b, -3, 3)) * u;
     const rx = hx + Math.cos(ang) * reach;
     const ry = hy + Math.sin(ang) * reach;
-    const total = reach * randRange(b, 1.32, 1.48);
-    const segs = drag ? [total * 0.42, total * 0.36, total * 0.22] : [total * 0.3, total * 0.28, total * 0.24, total * 0.18];
+    const total = reach * randRange(b, 1.5, 1.6);
+    const segs = drag ? [total * 0.45, total * 0.35, total * 0.2] : [total * 0.42, total * 0.36, total * 0.22];
     legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
   }
-  const rig = makeRig(legs, 9.5 * u, 0.15, 1.3);
+  const rig = makeRig(legs, 9 * u, 0.15, 1.2);
+  rig.sag = 0.3;
   const e: Sentinel = {
     ...b,
     kind: 'sentinel',
@@ -135,9 +138,9 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
     ay: y,
     anchorT: randRange(b, 2, 4),
     eye: makeEye(),
-    plates: PLATES.map((p) => scaledPoly(b, p, u, 1.4)),
-    frag: scaledPoly(b, FRAG, u, 0.6),
-    hull: scaledPoly(b, [10, -4, 4, -10, -4, -10, -10, -4, -10, 4, -4, 10, 4, 10, 10, 4], u, 0),
+    plates: PLATES.map((p) => scaledPoly(b, p, u * BK, 1.4)),
+    frag: scaledPoly(b, FRAG, u * BK, 0.6),
+    hull: scaledPoly(b, [10, -4, 4, -10, -4, -10, -10, -4, -10, 4, -4, 10, 4, 10, 10, 4], u * BK, 0),
     tremble: 0,
     shake: 0,
     shattered: false,
@@ -157,7 +160,7 @@ export function sentinelCharge(e: Sentinel): void {
 
 export const sentinelMuzzle = (e: Sentinel, out: Vec): Vec => {
   const u = e.size / 70;
-  const l = (27 - e.recoil * 5) * u;
+  const l = (27 - e.recoil * 5) * u * BK;
   out.x = e.x + Math.cos(e.aim) * l;
   out.y = e.y + Math.sin(e.aim) * l;
   return out;
@@ -309,6 +312,7 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   const bx = e.x + c * e.rig.offX - s * e.rig.offY + tj;
   const by = e.y + s * e.rig.offX + c * e.rig.offY - tj * 0.5;
   const lw = Math.max(1, w);
+  const U = u * BK;
   const ca = Math.cos(e.aim);
   const sa = Math.sin(e.aim);
 
@@ -334,19 +338,19 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   // breathing core ring (visible through the plate gaps)
   const cg = 0.1 + 0.12 * Math.sin(time * 2.2 + e.seed) + e.charge * 0.85;
   ctx.strokeStyle = coreColor(cg);
-  ctx.lineWidth = 1.8 * u;
+  ctx.lineWidth = 1.8 * U;
   ctx.beginPath();
-  ctx.arc(0, 0, 13 * u, 0, TAU);
+  ctx.arc(0, 0, 13 * U, 0, TAU);
   ctx.stroke();
   // plates batched, each rattles on shake / spreads with charge
-  const spread = (e.charge * 1.2 + e.shake * 1.5) * u;
+  const spread = (e.charge * 1.2 + e.shake * 1.5) * U;
   ctx.beginPath();
   for (let i = 0; i < 4; i++) {
     const a = (i + 0.5) * (TAU / 4) - TAU / 4;
-    const j = e.shake > 0 ? Math.sin(time * 70 + i * 3) * e.shake * 1.2 * u : 0;
+    const j = e.shake > 0 ? Math.sin(time * 70 + i * 3) * e.shake * 1.2 * U : 0;
     polySub(ctx, e.plates[i], Math.cos(a) * spread + j, Math.sin(a) * spread - j);
   }
-  polySub(ctx, e.frag, 15.5 * u + Math.sin(time * 1.9) * 0.8 * u, 11.5 * u + Math.cos(time * 1.3) * 0.6 * u);
+  polySub(ctx, e.frag, 15.5 * U + Math.sin(time * 1.9) * 0.8 * U, 11.5 * U + Math.cos(time * 1.3) * 0.6 * U);
   ctx.fillStyle = fill;
   ctx.fill();
   ctx.lineWidth = lw;
@@ -358,35 +362,31 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   ctx.lineWidth = Math.max(0.6, w * 0.8);
   ctx.beginPath();
   for (let i = 0; i < 4; i++) {
-    ctx.moveTo((-15 + i * 2) * u, -1 * u);
-    ctx.lineTo((-15 + i * 2) * u, 2 * u);
+    ctx.moveTo((-15 + i * 2) * U, -1 * U);
+    ctx.lineTo((-15 + i * 2) * U, 2 * U);
   }
-  ctx.moveTo(6 * u, -12 * u);
-  ctx.lineTo(10 * u, -9 * u);
+  ctx.moveTo(6 * U, -12 * U);
+  ctx.lineTo(10 * U, -9 * U);
   ctx.stroke();
   // antenna needles with off-white tips (one sways)
   const sway = Math.sin(time * 1.6 + e.seed) * 0.25;
-  const a1x = -14 * u + Math.cos(Math.PI + 0.5 + sway) * 13 * u;
-  const a1y = -8 * u + Math.sin(Math.PI + 0.5 + sway) * 13 * u;
+  const a1x = -14 * U + Math.cos(Math.PI + 0.5 + sway) * 13 * U;
+  const a1y = -8 * U + Math.sin(Math.PI + 0.5 + sway) * 13 * U;
   ctx.strokeStyle = orangeA(0.7);
   ctx.beginPath();
-  ctx.moveTo(-14 * u, -8 * u);
+  ctx.moveTo(-14 * U, -8 * U);
   ctx.lineTo(a1x, a1y);
-  ctx.moveTo(-12 * u, 9 * u);
-  ctx.lineTo(-22 * u, 14 * u);
+  ctx.moveTo(-12 * U, 9 * U);
+  ctx.lineTo(-22 * U, 14 * U);
   ctx.stroke();
   ctx.fillStyle = whiteA(0.9);
-  const ts = Math.max(1, 1.2 * u);
+  const ts = Math.max(1, 1.2 * U);
   ctx.fillRect(a1x - ts / 2, a1y - ts / 2, ts, ts);
-  ctx.fillRect(-22 * u - ts / 2, 14 * u - ts / 2, ts, ts);
+  ctx.fillRect(-22 * U - ts / 2, 14 * U - ts / 2, ts, ts);
   ctx.restore();
-  // second eye on the rear-left plate opens while charging
-  const s2x = -9 * u;
-  const s2y = -9.5 * u;
-  drawChargeEye(ctx, bx + c * s2x - s * s2y, by + s * s2x + c * s2y, 2.4 * u, e.eye, e.charge, e.heading + 0.8);
 
   // lens tower: three tiers, each shifted along the aim (parallax height)
-  const rc = e.recoil * 5 * u;
+  const rc = e.recoil * 5 * U;
   ctx.save();
   ctx.translate(bx, by);
   ctx.rotate(e.aim);
@@ -404,32 +404,32 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   ctx.strokeStyle = orangeA(0.7);
   ctx.lineWidth = w * 1.4 + 2;
   ctx.beginPath();
-  ctx.moveTo(8 * u - rc, -2 * u);
-  ctx.lineTo(27 * u - rc, -2 * u);
-  ctx.moveTo(8 * u - rc, 2 * u);
-  ctx.lineTo(27 * u - rc, 2 * u);
+  ctx.moveTo(8 * U - rc, -2 * U);
+  ctx.lineTo(27 * U - rc, -2 * U);
+  ctx.moveTo(8 * U - rc, 2 * U);
+  ctx.lineTo(27 * U - rc, 2 * U);
   ctx.stroke();
   ctx.strokeStyle = fill;
   ctx.lineWidth = w * 1.4;
   ctx.stroke();
   if (e.charge > 0.05) {
     ctx.fillStyle = coreColor(e.charge);
-    const l = 19 * u * e.charge;
-    ctx.fillRect(8 * u - rc, -2.6 * u, l, 1.2 * u);
-    ctx.fillRect(8 * u - rc, 1.4 * u, l * 0.9, 1.2 * u);
+    const l = 19 * U * e.charge;
+    ctx.fillRect(8 * U - rc, -2.6 * U, l, 1.2 * U);
+    ctx.fillRect(8 * U - rc, 1.4 * U, l * 0.9, 1.2 * U);
   }
   ctx.strokeStyle = whiteA(0.85);
   ctx.lineWidth = Math.max(0.8, w * 0.8);
   ctx.beginPath();
-  ctx.moveTo(25 * u - rc, -3.2 * u);
-  ctx.lineTo(25 * u - rc, 3.2 * u);
+  ctx.moveTo(25 * U - rc, -3.2 * U);
+  ctx.lineTo(25 * U - rc, 3.2 * U);
   ctx.stroke();
   // tier 2: hexagon offset forward
-  const t2 = 1.6 * u - rc * 0.5;
+  const t2 = 1.6 * U - rc * 0.5;
   ctx.beginPath();
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * TAU + Math.PI / 6;
-    const r = 7.6 * u;
+    const r = 7.6 * U;
     if (k === 0) ctx.moveTo(t2 + Math.cos(a) * r, Math.sin(a) * r);
     else ctx.lineTo(t2 + Math.cos(a) * r, Math.sin(a) * r);
   }
@@ -439,34 +439,34 @@ function drawBody(ctx: Ctx2D, e: Sentinel, time: number): void {
   ctx.strokeStyle = edgeA(e, 0.9);
   ctx.stroke();
   // tier 3: lens bezel ring with ticks (slowly rotating)
-  const t3 = 3 * u - rc * 0.6;
+  const t3 = 3 * U - rc * 0.6;
   ctx.strokeStyle = PAL.grayMid;
-  ctx.lineWidth = Math.max(0.8, 1.6 * u);
+  ctx.lineWidth = Math.max(0.8, 1.6 * U);
   ctx.beginPath();
-  ctx.arc(t3, 0, 5.8 * u, 0, TAU);
+  ctx.arc(t3, 0, 5.8 * U, 0, TAU);
   ctx.stroke();
   ctx.strokeStyle = orangeA(0.8);
-  ctx.lineWidth = Math.max(0.6, 0.7 * u);
+  ctx.lineWidth = Math.max(0.6, 0.7 * U);
   ctx.beginPath();
   const rot = time * (0.6 + e.charge * 5);
   for (let k = 0; k < 8; k++) {
     const a = rot + (k / 8) * TAU;
-    ctx.moveTo(t3 + Math.cos(a) * 5.2 * u, Math.sin(a) * 5.2 * u);
-    ctx.lineTo(t3 + Math.cos(a) * 6.6 * u, Math.sin(a) * 6.6 * u);
+    ctx.moveTo(t3 + Math.cos(a) * 5.2 * U, Math.sin(a) * 5.2 * U);
+    ctx.lineTo(t3 + Math.cos(a) * 6.6 * U, Math.sin(a) * 6.6 * U);
   }
   ctx.stroke();
   ctx.restore();
   // lens = eye (focal point)
-  const lx = bx + ca * (3 * u - rc * 0.6);
-  const ly = by + sa * (3 * u - rc * 0.6);
-  drawEye(ctx, lx, ly, 4.6 * u, e.eye, e.charge, 0.25 + e.charge * 0.5, e.aim + Math.PI / 2);
+  const lx = bx + ca * (3 * U - rc * 0.6);
+  const ly = by + sa * (3 * U - rc * 0.6);
+  drawEye(ctx, lx, ly, 4.8 * U, e.eye, Math.max(0.65, e.charge), 0.25 + e.charge * 0.5, e.aim + Math.PI / 2);
 
   // single glow: muzzle while charging / firing, else the core
-  const mx = bx + ca * (27 * u - rc);
-  const my = by + sa * (27 * u - rc);
-  if (e.flash > 0) drawGlow(ctx, mx, my, (10 + e.flash * 22) * u, e.flash);
-  else if (e.mode === CHARGE) drawGlow(ctx, mx, my, (5 + e.charge * 10) * u, 0.2 + e.charge * 0.8);
-  else drawGlow(ctx, bx, by, (14 + e.charge * 10) * u, 0.14 + 0.06 * Math.sin(time * 2.2 + e.seed));
+  const mx = bx + ca * (27 * U - rc);
+  const my = by + sa * (27 * U - rc);
+  if (e.flash > 0) drawGlow(ctx, mx, my, (10 + e.flash * 22) * U, e.flash);
+  else if (e.mode === CHARGE) drawGlow(ctx, mx, my, (5 + e.charge * 10) * U, 0.2 + e.charge * 0.8);
+  else drawGlow(ctx, bx, by, (14 + e.charge * 10) * U, 0.14 + 0.06 * Math.sin(time * 2.2 + e.seed));
   if (e.flash > 0) {
     ctx.strokeStyle = whiteA(e.flash);
     ctx.lineWidth = Math.max(0.8, u);

@@ -74,6 +74,12 @@ export interface Rig {
   pvy: number;
   leanX: number;
   leanY: number;
+  /** how far the body sags away from a lifted leg (fraction of threshold) */
+  sag: number;
+  /** step lead multiplier (legs sharing a side step one at a time, so each must land further ahead) */
+  lead: number;
+  /** safety re-plants of single over-stretched feet (diagnostics) */
+  legSnaps: number;
 }
 
 export interface LegSpec {
@@ -133,6 +139,13 @@ export const makeLeg = (s: LegSpec, r?: Rng): Leg => {
   };
 };
 
+const sideLead = (legs: Leg[]): number => {
+  let l = 0;
+  let r = 0;
+  for (const L of legs) if (!L.drag) L.side < 0 ? l++ : r++;
+  return 1.25 + 0.75 * Math.max(0, Math.max(l, r) - 1);
+};
+
 export const makeRig = (legs: Leg[], threshold: number, baseDur: number, bulge: number): Rig => ({
   legs,
   threshold,
@@ -151,6 +164,9 @@ export const makeRig = (legs: Leg[], threshold: number, baseDur: number, bulge: 
   pvy: 0,
   leanX: 0,
   leanY: 0,
+  sag: 0.14,
+  lead: sideLead(legs),
+  legSnaps: 0,
 });
 
 /** Plants every foot on its rest position (call once after create). */
@@ -193,6 +209,12 @@ export const replantRig = (rig: Rig, x: number, y: number, h: number, vx: number
   updateRig(rig, x, y, h, vx, vy, 0, { rs: 1 });
 };
 
+/** true if another attached leg on L's side is already lifting (gait rule: one per side) */
+const sideBusy = (rig: Rig, L: Leg): boolean => {
+  for (const o of rig.legs) if (o !== L && o.stepping && o.det < 0 && o.side === L.side) return true;
+  return false;
+};
+
 const beginStep = (L: Leg, tx: number, ty: number, dur: number, delay: number, liftK: number): void => {
   L.sx = L.fx;
   L.sy = L.fy;
@@ -208,8 +230,18 @@ const startStep = (rig: Rig, L: Leg, vx: number, vy: number, dur: number, delay:
   const d = dur * L.durMul * (0.88 + rand(r) * 0.24);
   // predictive placement: land where the rest point will be, plus noise
   const jit = rig.threshold * 0.3;
-  let tx = L.rwx + vx * d * 1.25 + (rand(r) - 0.5) * jit;
-  let ty = L.rwy + vy * d * 1.25 + (rand(r) - 0.5) * jit;
+  // lead ahead of the rest point, but never past the re-step trigger
+  // (otherwise the foot lands "urgent" and immediately steps back)
+  let lx = vx * d * rig.lead;
+  let ly = vy * d * rig.lead;
+  const ll = Math.hypot(lx, ly);
+  const lmax = rig.threshold * L.thrMul * 0.75;
+  if (ll > lmax) {
+    lx *= lmax / ll;
+    ly *= lmax / ll;
+  }
+  let tx = L.rwx + lx + (rand(r) - 0.5) * jit;
+  let ty = L.rwy + ly + (rand(r) - 0.5) * jit;
   const hx = tx - L.hwx;
   const hy = ty - L.hwy;
   const hd = Math.hypot(hx, hy);
@@ -227,7 +259,7 @@ export const rigFlinch = (rig: Rig, r: Rng): void => {
   const k = (rand(r) * legs.length) | 0;
   for (let i = 0; i < legs.length; i++) {
     const L = legs[(k + i) % legs.length];
-    if (L.det >= 0 || L.stepping) continue;
+    if (L.det >= 0 || L.stepping || sideBusy(rig, L)) continue;
     const tx = L.fx + (L.hwx - L.fx) * 0.45;
     const ty = L.fy + (L.hwy - L.fy) * 0.45;
     beginStep(L, tx, ty, 0.1, 0, 1.8);
@@ -304,6 +336,7 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
       const sx = L.stepping ? L.tx : L.fx;
       const sy = L.stepping ? L.ty : L.fy;
       if (Math.hypot(sx - L.hwx, sy - L.hwy) > L.total * 1.45) {
+        rig.legSnaps++;
         L.fx = L.rwx;
         L.fy = L.rwy;
         L.stepping = false;
@@ -360,8 +393,8 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
     const lx = L.hx;
     const ly = L.hy;
     const ll = Math.hypot(lx, ly) || 1;
-    offX -= (lx / ll) * L.lift * rig.threshold * 0.14;
-    offY -= (ly / ll) * L.lift * rig.threshold * 0.14;
+    offX -= (lx / ll) * L.lift * rig.threshold * rig.sag;
+    offY -= (ly / ll) * L.lift * rig.threshold * rig.sag;
     const dfx = L.fx - L.rwx;
     const dfy = L.fy - L.rwy;
     offX += (c * dfx + s * dfy) * 0.05;
@@ -397,7 +430,7 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
       if (sc[g ^ 1] === 0) {
         let delay = 0;
         for (const L of legs) {
-          if (!L.stepping && !L.drag && L.det < 0 && L.group === g && L.urg >= 0.55) {
+          if (!L.stepping && !L.drag && L.det < 0 && L.group === g && L.urg >= 0.55 && !sideBusy(rig, L)) {
             startStep(rig, L, vx, vy, dur, delay, r);
             delay += dur * (0.12 + rand(r) * 0.22); // ripple, not lockstep
             sc[g]++;
@@ -407,7 +440,7 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
     }
     // emergency: a badly over-stretched foot may break gait
     for (const L of legs) {
-      if (!L.stepping && !L.drag && L.det < 0 && L.urg > 2.4) startStep(rig, L, vx, vy, dur * 0.8, 0, r);
+      if (!L.stepping && !L.drag && L.det < 0 && L.urg > 2.4 && !sideBusy(rig, L)) startStep(rig, L, vx, vy, dur * 0.8, 0, r);
     }
     // idle: test the ground with one leg / rare spasm of the dragged limb
     if (sp < rig.threshold * 0.6 && stepping === 0 && rig.splay < 0.1) {
@@ -416,7 +449,7 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
         rig.idleT = 0;
         rig.probeT = 0.7 + rand(r) * 1.8;
         const L = legs[(rand(r) * legs.length) | 0];
-        if (L.det < 0) {
+        if (L.det < 0 && !sideBusy(rig, L)) {
           const k = L.drag ? 0.9 : 0.5;
           const px = L.fx + (L.rwx - L.fx) * k + (rand(r) - 0.5) * rig.threshold * 0.5;
           const py = L.fy + (L.rwy - L.fy) * k + (rand(r) - 0.5) * rig.threshold * 0.5;
@@ -651,7 +684,7 @@ export function solveChain(
 // Drawing
 
 // segment roles: 0 femur, 1 tibia, 2 metatarsus, 3 needle
-const ROLE_W = [3.0, 2.2, 1.6, 0.9];
+const ROLE_W = [2.3, 1.7, 1.2, 0.8];
 const roleOf = (k: number, n: number): number => (k === 0 ? 0 : k === n - 1 ? 3 : k === 1 ? 1 : 2);
 
 // deterministic tremble (identical across the outline / fill passes)
