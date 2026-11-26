@@ -6,7 +6,7 @@
 // Drawn as dark silhouettes with orange edges, joint squares and off-white
 // needle tips. No allocations after construction.
 
-import { Ctx2D, PAL, Rng, TAU, clamp, damp, orangeA, rand, smooth, whiteA } from './common';
+import { Ctx2D, PAL, Rng, TAU, clamp, damp, orangeA, rand, smooth, whiteA, wrapAngle } from './common';
 
 export interface Leg {
   n: number; // segment count
@@ -80,6 +80,15 @@ export interface Rig {
   lead: number;
   /** safety re-plants of single over-stretched feet (diagnostics) */
   legSnaps: number;
+  /** previous heading + derived effective step threshold (speed / turn adaptive) */
+  ph: number;
+  thrEff: number;
+  /** gait clock 0..1: group 0 lifts at 0, group 1 at 0.5 (fixed phase offset) */
+  phase: number;
+  /** airborne (lunge leap): feet swing into a splayed flight pose, no stepping */
+  air: boolean;
+  /** fastest body speed the gait can carry without feet trailing (px/s) */
+  vmax: number;
 }
 
 export interface LegSpec {
@@ -167,6 +176,11 @@ export const makeRig = (legs: Leg[], threshold: number, baseDur: number, bulge: 
   sag: 0.14,
   lead: sideLead(legs),
   legSnaps: 0,
+  ph: 0,
+  thrEff: threshold,
+  phase: 0,
+  air: false,
+  vmax: threshold * 8,
 });
 
 /** Plants every foot on its rest position (call once after create). */
@@ -183,6 +197,7 @@ export const plantRig = (rig: Rig, x: number, y: number, h: number): void => {
   rig.collapse = 0;
   rig.splay = 0;
   rig.skid = 0;
+  rig.ph = h;
   updateRig(rig, x, y, h, 0, 0, 0, { rs: 1 });
 };
 
@@ -206,6 +221,7 @@ export const replantRig = (rig: Rig, x: number, y: number, h: number, vx: number
   rig.pvy = vy;
   rig.leanX = rig.leanY = 0;
   rig.idleT = 0;
+  rig.ph = h;
   updateRig(rig, x, y, h, vx, vy, 0, { rs: 1 });
 };
 
@@ -235,7 +251,7 @@ const startStep = (rig: Rig, L: Leg, vx: number, vy: number, dur: number, delay:
   let lx = vx * d * rig.lead;
   let ly = vy * d * rig.lead;
   const ll = Math.hypot(lx, ly);
-  const lmax = rig.threshold * L.thrMul * 0.75;
+  const lmax = rig.thrEff * L.thrMul * 0.75;
   if (ll > lmax) {
     lx *= lmax / ll;
     ly *= lmax / ll;
@@ -251,6 +267,20 @@ const startStep = (rig: Rig, L: Leg, vx: number, vy: number, dur: number, delay:
     ty = L.hwy + (hy / hd) * max;
   }
   beginStep(L, tx, ty, d, delay, 1);
+};
+
+/** Leap control (lunges): airborne feet swing up; on landing they plant where they are. */
+export const rigSetAir = (rig: Rig, air: boolean): void => {
+  if (rig.air === air) return;
+  rig.air = air;
+  if (!air) {
+    for (const L of rig.legs) {
+      if (L.det >= 0) continue;
+      L.lift = 0;
+      L.flash = 1;
+      L.stepping = false;
+    }
+  }
 };
 
 /** Hit reaction: one planted leg jerks inward toward the hip and re-plants. */
@@ -302,6 +332,12 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
   let nAtt = 0;
   const spread = 1 + rig.splay * 0.38 - rig.collapse * 0.45;
   const sp = Math.hypot(vx, vy);
+  // adaptive gait: longer strides when fast (feet never trail), shorter
+  // shuffle steps when turning on the spot (feet never twist past the body)
+  let turnRate = 0;
+  if (dt > 0) turnRate = Math.abs(wrapAngle(h - rig.ph)) / dt;
+  rig.ph = h;
+  rig.thrEff = (rig.threshold * clamp(1 + sp / (rig.threshold * 14), 1, 1.4)) / (1 + turnRate * 0.35);
 
   for (let i = 0; i < legs.length; i++) {
     const L = legs[i];
@@ -413,7 +449,7 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
       L.urg = 0;
       continue;
     }
-    let u = Math.hypot(L.fx - L.rwx, L.fy - L.rwy) / (rig.threshold * L.thrMul);
+    let u = Math.hypot(L.fx - L.rwx, L.fy - L.rwy) / (rig.thrEff * L.thrMul);
     const hd = Math.hypot(L.fx - L.hwx, L.fy - L.hwy);
     if (hd > L.total * 0.985) u = Math.max(u, 2.6);
     L.urg = u;
@@ -423,16 +459,76 @@ export function updateRig(rig: Rig, x: number, y: number, h: number, vx: number,
     }
   }
 
-  if (dt > 0 && rig.collapse <= 0) {
-    const dur = clamp(rig.baseDur - sp * 0.0004, 0.085, rig.baseDur);
+  // gait clock: stride lengthens with speed, cadence = speed / stride, capped
+  // so the two groups never overlap; vmax is what the body may move at
+  const durMin = Math.max(0.075, rig.baseDur * 0.68);
+  const strideK = clamp(1 + sp / (rig.threshold * 14), 1, 1.4);
+  const stride = rig.threshold * 2 * strideK;
+  const maxRate = 1 / (2.2 * durMin);
+  rig.vmax = rig.threshold * 2 * 1.4 * maxRate;
+  const walking = sp > rig.threshold * 1.2 && !rig.air;
+
+  if (rig.air && dt > 0) {
+    // leap: every foot swings off the ground into a splayed pose under the body
+    const k = damp(22, dt);
+    for (const L of legs) {
+      if (L.det >= 0) continue;
+      L.stepping = false;
+      L.fx += (L.rwx + vx * 0.04 - L.fx) * k;
+      L.fy += (L.rwy + vy * 0.04 - L.fy) * k;
+      L.lift += (1 - L.lift) * k;
+    }
+  } else if (dt > 0 && rig.collapse <= 0 && walking) {
+    const dur = clamp(rig.baseDur - sp * 0.0005, durMin, rig.baseDur);
+    const rate = Math.min(sp / stride, maxRate);
+    const p0 = rig.phase;
+    rig.phase = (p0 + rate * dt) % 1;
+    let fire = rig.phase < p0 ? 0 : p0 < 0.5 && rig.phase >= 0.5 ? 1 : -1;
+    if (fire >= 0) {
+      // fixed phase offset is a hard rule: wait at the boundary while any
+      // leg of the other group is still in the air
+      let busy = false;
+      for (const L of legs) if (L.stepping && L.group !== fire && L.det < 0) busy = true;
+      if (busy) {
+        rig.phase = fire === 0 ? 0.9999 : 0.4999;
+        fire = -1;
+      }
+    }
+    if (fire >= 0) {
+      const ux = vx / sp;
+      const uy = vy / sp;
+      for (const L of legs) {
+        if (L.group !== fire || L.stepping || L.drag || L.det >= 0 || sideBusy(rig, L)) continue;
+        // land half a stride ahead of the rest point (plus the travel during
+        // the swing) so the stance sweeps evenly behind and ahead of it
+        let tx = L.rwx + vx * dur + ux * stride * 0.5;
+        let ty = L.rwy + vy * dur + uy * stride * 0.5;
+        const hx = tx - (L.hwx + vx * dur);
+        const hy = ty - (L.hwy + vy * dur);
+        const hd = Math.hypot(hx, hy);
+        const max = L.total * 0.9;
+        if (hd > max) {
+          tx = L.hwx + vx * dur + (hx / hd) * max;
+          ty = L.hwy + vy * dur + (hy / hd) * max;
+        }
+        beginStep(L, tx, ty, dur * L.durMul * (0.95 + rand(r) * 0.1), 0, 1);
+      }
+    }
+    // safety: a foot that still fell far behind may re-place out of phase
+    for (const L of legs) {
+      if (!L.stepping && !L.drag && L.det < 0 && L.urg > 2.4 && !sideBusy(rig, L)) startStep(rig, L, vx, vy, dur * 0.8, 0, r);
+    }
+  } else if (dt > 0 && rig.collapse <= 0) {
+    // standing / turning on the spot / very slow: urgency-driven shuffle steps
+    const dur = clamp(rig.baseDur - sp * 0.0005, 0.075, rig.baseDur);
     if (best >= 0 && bestU >= 1) {
       const g = legs[best].group;
       if (sc[g ^ 1] === 0) {
         let delay = 0;
         for (const L of legs) {
-          if (!L.stepping && !L.drag && L.det < 0 && L.group === g && L.urg >= 0.55 && !sideBusy(rig, L)) {
+          if (!L.stepping && !L.drag && L.det < 0 && L.group === g && L.urg >= 0.3 && !sideBusy(rig, L)) {
             startStep(rig, L, vx, vy, dur, delay, r);
-            delay += dur * (0.12 + rand(r) * 0.22); // ripple, not lockstep
+            delay += dur * (0.03 + rand(r) * 0.06); // pair lands together, tiny offset
             sc[g]++;
           }
         }

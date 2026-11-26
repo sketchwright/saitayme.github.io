@@ -30,6 +30,7 @@ import {
   hotA,
   hurtBase,
   killBase,
+  faceTravel,
   makeBase,
   makeEye,
   orangeA,
@@ -47,6 +48,8 @@ import {
   whiteA,
   wrapAngle,
   robustUpdate,
+  EnemyIntent,
+  IntentMode,
 } from './common';
 import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
 
@@ -102,25 +105,26 @@ export function createSentinel(x: number, y: number, seed: number, opts?: Create
   const legs: Leg[] = [];
   // side, hipX, hipY, rest angle off forward (deg), reach, group, drag
   const specs: Array<[number, number, number, number, number, number, boolean]> = [
-    // three stilts at irregular points: a long one front-left, a long one
-    // from the right flank, and a buckled stump dragging from the rear-left
-    [-1, 16.7, -17.8, 58, 25, 0, false],
-    [1, 2.2, 23.3, 92, 27, 1, false],
-    [-1, -21, -12.2, 150, 17, 1, true],
+    // tripod under the turret: front-left, front-right, and one rear stilt
+    // (kinked / damaged but load-bearing). Never more than one leg per side
+    // lifts: FL + rear step together, then FR.
+    [-1, 14, -15, 55, 23, 0, false],
+    [1, 14, 15, 55, 23, 1, false],
+    [1, -21, 0, 180, 21, 0, true],
   ];
-  for (const [side, hx0, hy0, deg, reach0, group, drag] of specs) {
+  for (const [side, hx0, hy0, deg, reach0, group, dmg] of specs) {
     const hx = hx0 * u;
     const hy = hy0 * u;
-    const ang = (side * (deg + randRange(b, -6, 6)) * Math.PI) / 180;
-    const reach = (reach0 + randRange(b, -3, 3)) * u;
+    const ang = (side * deg * Math.PI) / 180;
+    const reach = reach0 * u;
     const rx = hx + Math.cos(ang) * reach;
     const ry = hy + Math.sin(ang) * reach;
     const total = reach * randRange(b, 1.5, 1.6);
-    const segs = drag ? [total * 0.45, total * 0.35, total * 0.2] : [total * 0.42, total * 0.36, total * 0.22];
-    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
+    const segs = dmg ? [total * 0.45, total * 0.35, total * 0.2] : [total * 0.42, total * 0.36, total * 0.22];
+    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, broken: dmg ? 1 : -1 }, b));
   }
   const rig = makeRig(legs, 9 * u, 0.15, 1.2);
-  rig.sag = 0.3;
+  rig.sag = 0.2;
   const e: Sentinel = {
     ...b,
     kind: 'sentinel',
@@ -211,10 +215,20 @@ const resetSentinel = (e: Sentinel): void => {
 };
 
 /** Robust public update (see robustUpdate). `fired` survives substeps. */
-export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Vec | null): void {
+const modeSentinel = (e: Sentinel, mode: IntentMode): void => {
+  if (mode === 'lunge') sentinelCharge(e);
+};
+
+/** Robust public update (see robustUpdate). `fired` survives substeps. */
+export function updateSentinel(e: Sentinel, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   e.fired = false;
+  // the director may write an aim *point* into e.aim; the turret keeps an angle
+  if (typeof e.aim !== 'number' || !Number.isFinite(e.aim)) {
+    const a = e.aim as unknown as Vec | undefined;
+    e.aim = a && Number.isFinite(a.x) && Number.isFinite(a.y) ? Math.atan2(a.y - e.y, a.x - e.x) : e.heading;
+  }
   const u = e.size / 70;
-  robustUpdate(e, dt, target, intent, 60 * u, 200 * u, 6, stepSentinel, resetSentinel);
+  robustUpdate(e, dt, target, intent, 80 * u, 200 * u, 6, stepSentinel, resetSentinel, modeSentinel);
 }
 
 function stepSentinel(e: Sentinel, dt: number, target: Vec, intent: Vec | null): void {
@@ -292,9 +306,20 @@ function stepSentinel(e: Sentinel, dt: number, target: Vec, intent: Vec | null):
     dvy = clamp((e.ay - e.y) * 1.5, -20 * u, 20 * u);
   }
   steer(e, dvx, dvy, 4, dt);
+  e.rig.splay += ((e.mo.mode === 'hold' ? 0.3 : 0) - e.rig.splay) * damp(5, dt);
+  if ((e.mode !== COOL || e.modeT > 0.25) && e.mo.mode !== 'evade') faceTravel(e); // (recoil shove / sidestep excepted)
+  {
+    const v = Math.hypot(e.vx, e.vy);
+    if (v > e.rig.vmax) {
+      e.vx *= e.rig.vmax / v;
+      e.vy *= e.rig.vmax / v;
+    }
+  }
   e.x += e.vx * dt;
   e.y += e.vy * dt;
-  e.heading = turnToward(e.heading, e.aim, 0.6 * dt);
+  const msp = Math.hypot(e.vx, e.vy);
+  if (msp > 1.5 * u) e.heading = turnToward(e.heading, Math.atan2(e.vy, e.vx), 2.5 * dt);
+  else e.heading = turnToward(e.heading, e.aim, 0.6 * dt);
   updateRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy, dt, e);
   updateEye(e.eye, e, e.x, e.y, target, dt, 0.15, e.charge);
   updateGlitch(e, dt, 0.3 + e.charge * 2, 0.05);

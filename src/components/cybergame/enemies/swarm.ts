@@ -44,6 +44,8 @@ import {
   updateTrail,
   whiteA,
   robustUpdate,
+  EnemyIntent,
+  IntentMode,
 } from './common';
 import { Tendril, drawTendrilDebug, drawTendrils, initTendril, makeTendril, updateTendril, whipTendril } from './tendril';
 
@@ -167,9 +169,14 @@ const resetFragment = (e: Fragment): void => {
 };
 
 /** Robust public update (see robustUpdate). */
-export function updateFragment(e: Fragment, dt: number, target: Vec, intent?: Vec | null): void {
+const modeFragment = (e: Fragment, mode: IntentMode): void => {
+  if (mode === 'lunge') fragmentDart(e);
+};
+
+/** Robust public update (see robustUpdate). */
+export function updateFragment(e: Fragment, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   const u = e.size / 22;
-  robustUpdate(e, dt, target, intent, 300 * u, 420 * u, 40, stepFragment, resetFragment);
+  robustUpdate(e, dt, target, intent, 300 * u, 420 * u, 40, stepFragment, resetFragment, modeFragment);
 }
 
 function stepFragment(e: Fragment, dt: number, target: Vec, intent: Vec | null): void {
@@ -418,7 +425,7 @@ const tmp: Vec = { x: 0, y: 0 };
 const resetSwarm = (_e: SwarmNode): void => {};
 
 /** Robust public update (see robustUpdate). */
-export function updateSwarmNode(e: SwarmNode, dt: number, target: Vec, intent?: Vec | null): void {
+export function updateSwarmNode(e: SwarmNode, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   const u = e.size / 52;
   robustUpdate(e, dt, target, intent, 110 * u, 220 * u, 20, stepSwarmNode, resetSwarm);
 }

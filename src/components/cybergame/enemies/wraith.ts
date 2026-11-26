@@ -42,6 +42,8 @@ import {
   updateGlitch,
   updateTrail,
   robustUpdate,
+  EnemyIntent,
+  IntentMode,
 } from './common';
 import { Tendril, drawRibbons, drawTendrilDebug, drawTendrils, initTendril, makeTendril, updateTendril, whipTendril } from './tendril';
 
@@ -204,9 +206,14 @@ const resetWraith = (e: Wraith): void => {
 };
 
 /** Robust public update (see robustUpdate). */
-export function updateWraith(e: Wraith, dt: number, target: Vec, intent?: Vec | null): void {
+const modeWraith = (e: Wraith, mode: IntentMode): void => {
+  if (mode === 'lunge') wraithStrike(e);
+};
+
+/** Robust public update (see robustUpdate). */
+export function updateWraith(e: Wraith, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   const u = e.size / 60;
-  robustUpdate(e, dt, target, intent, 160 * u, 220 * u, 10, stepWraith, resetWraith);
+  robustUpdate(e, dt, target, intent, 160 * u, 220 * u, 10, stepWraith, resetWraith, modeWraith);
 }
 
 function stepWraith(e: Wraith, dt: number, target: Vec, intent: Vec | null): void {
@@ -222,7 +229,7 @@ function stepWraith(e: Wraith, dt: number, target: Vec, intent: Vec | null): voi
     case SHOWN:
       e.vis += (1 - e.vis) * damp(6, dt);
       e.charge += (0 - e.charge) * damp(2, dt);
-      if (e.modeT > e.dur) wraithStrike(e);
+      if (e.modeT > e.dur && !e.mo.mode) wraithStrike(e); // director mode: strikes come via 'lunge'
       break;
     case FADING: {
       const p = Math.min(1, e.modeT / 0.3);

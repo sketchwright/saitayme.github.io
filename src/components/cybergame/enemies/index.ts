@@ -17,7 +17,8 @@
 //   spawnEnemy(e)   glitch materialise-in (~0.3 s of assembling slices)
 //   isDying(e)      true while the death animation plays
 
-import { CreateOpts, Ctx2D, Vec, spawnBase } from './common';
+import { CreateOpts, Ctx2D, EnemyIntent, Vec, spawnBase } from './common';
+import { drawAffixFx, drawRoleFx } from './roles';
 import { Boss, bossCharge, createBoss, drawBoss, drawBossDebug, hurtBoss, killBoss, updateBoss } from './boss';
 import { Crawler, crawlerLunge, createCrawler, drawCrawler, drawCrawlerDebug, hurtCrawler, killCrawler, updateCrawler } from './crawler';
 import { Leech, createLeech, drawLeech, drawLeechDebug, hurtLeech, killLeech, leechToggleLatch, updateLeech } from './leech';
@@ -50,6 +51,7 @@ export * from './leech';
 export * from './swarm';
 export * from './sentinel';
 export * from './boss';
+export * from './roles';
 
 export type Enemy = Crawler | Wraith | Leech | SwarmNode | Fragment | Sentinel | Boss;
 export type EnemyKind = Enemy['kind'];
@@ -75,7 +77,7 @@ export function createEnemy(kind: EnemyKind, x: number, y: number, seed: number,
   }
 }
 
-export function updateEnemy(e: Enemy, dt: number, target: Vec, intent?: Vec | null): void {
+export function updateEnemy(e: Enemy, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   switch (e.kind) {
     case 'crawler':
       return updateCrawler(e, dt, target, intent);
@@ -95,6 +97,13 @@ export function updateEnemy(e: Enemy, dt: number, target: Vec, intent?: Vec | nu
 }
 
 export function drawEnemy(ctx: Ctx2D, e: Enemy, time: number): void {
+  drawKind(ctx, e, time);
+  // optional director decorations (no-ops when the fields are missing)
+  if (e.affixes && e.affixes.length) drawAffixFx(ctx, e, time);
+  if (e.role) drawRoleFx(ctx, e, time);
+}
+
+function drawKind(ctx: Ctx2D, e: Enemy, time: number): void {
   switch (e.kind) {
     case 'crawler':
       return drawCrawler(ctx, e, time);

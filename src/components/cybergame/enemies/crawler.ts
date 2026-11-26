@@ -30,6 +30,7 @@ import {
   killBase,
   makeBase,
   makeEye,
+  faceTravel,
   makeSpring,
   orangeA,
   polySub,
@@ -46,8 +47,10 @@ import {
   updateTrail,
   whiteA,
   robustUpdate,
+  EnemyIntent,
+  IntentMode,
 } from './common';
-import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, updateRig } from './ik';
+import { Leg, Rig, drawRig, drawRigDebug, makeLeg, makeRig, plantRig, replantRig, rigDetach, rigFlinch, rigSetAir, updateRig } from './ik';
 
 export const CRAWLER_SIZE = 56;
 /** body plates are drawn at this multiple of the size unit (body dominates the silhouette) */
@@ -108,28 +111,30 @@ export function createCrawler(x: number, y: number, seed: number, opts?: CreateO
   const legs: Leg[] = [];
   // [side, hipX, hipY, rest angle off forward (deg), reach, segs, group, drag]
   const specs: Array<[number, number, number, number, number, number, number, boolean]> = [
-    // lopsided: three working limbs along the left flank (uneven spacing),
-    // nothing on the right but a snapped stump dragging from the rear corner
-    [-1, 22.7, -9, 55, 26, 3, 0, false],
-    [-1, 6, -12.8, 98, 23, 3, 1, false],
-    [-1, -13, -11, 140, 26, 3, 0, false],
-    [1, -18, 11.3, 152, 17, 3, 1, true],
+    // mirrored placement at the body's front and rear corners (not a radial
+    // fan); asymmetry only from length and damage: the rear-right limb is
+    // snapped and shorter but still walks. Groups = diagonal pairs.
+    // [side, hipX, hipY, rest angle off forward (deg), reach, segs, group, damaged]
+    [-1, 17, -9.5, 54, 22, 3, 0, false],
+    [1, 17, 9.5, 54, 21, 3, 1, false],
+    [-1, -14, -11.5, 128, 20, 3, 1, false],
+    [1, -14, 11.5, 128, 17, 3, 0, true],
   ];
-  for (const [side, hx0, hy0, deg, reach0, n, group, drag] of specs) {
-    const hx = (hx0 + randRange(b, -1, 1)) * u;
-    const hy = (hy0 + randRange(b, -0.6, 0.6)) * u;
-    const ang = (side * (deg + randRange(b, -8, 8)) * Math.PI) / 180;
-    const reach = (reach0 + randRange(b, -3, 4)) * u;
+  for (const [side, hx0, hy0, deg, reach0, n, group, dmg] of specs) {
+    const hx = hx0 * u;
+    const hy = hy0 * u;
+    const ang = (side * deg * Math.PI) / 180;
+    const reach = reach0 * u;
     const rx = hx + Math.cos(ang) * reach;
     const ry = hy + Math.sin(ang) * reach;
     const total = reach * randRange(b, 1.7, 1.85); // slack: a lagging foot never hits max reach
     const w = n === 3 ? [0.4, 0.36, 0.24] : [0.3, 0.28, 0.24, 0.18];
     const segs: number[] = [];
     for (let i = 0; i < n; i++) segs.push(total * w[i] * randRange(b, 0.9, 1.1));
-    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, drag, broken: drag ? 1 : -1 }, b));
+    legs.push(makeLeg({ hx, hy, rx, ry, side, group, segs, broken: dmg ? 1 : -1 }, b));
   }
-  const rig = makeRig(legs, 13 * u, 0.1, 1.5); // long stride + quick steps: three legs share one flank
-  rig.sag = 0.34; // fewer legs: the body lurches toward each lifted limb
+  const rig = makeRig(legs, 9.5 * u, 0.11, 1.5);
+  rig.sag = 0.18; // slight bob toward each lifted pair
   const frags: Float32Array[] = [];
   for (let i = 0; i < 3; i++) {
     const r = randRange(b, 1.6, 2.8);
@@ -213,6 +218,7 @@ function dying(e: Crawler, dt: number, target: Vec): void {
   e.rig.collapse = Math.min(1, t / DEATH_COLLAPSE);
   e.rig.splay = 0;
   e.rig.skid = 0;
+  rigSetAir(e.rig, false);
   // limbs give out one by one, then detach
   const legs = e.rig.legs;
   for (let i = 0; i < legs.length; i++) if (t > 0.12 + i * 0.045) rigDetach(legs[i], e.x, e.y, 55 * u, e);
@@ -234,14 +240,20 @@ function dying(e: Crawler, dt: number, target: Vec): void {
 }
 
 const resetCrawler = (e: Crawler): void => {
+  rigSetAir(e.rig, false);
   replantRig(e.rig, e.x, e.y, e.heading, e.vx, e.vy);
   e.tailA = e.heading;
 };
 
 /** Robust public update: dt capped + substepped, intent clamped + smoothed, teleports re-plant. */
-export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec | null): void {
+const modeCrawler = (e: Crawler, mode: IntentMode): void => {
+  if (mode === 'lunge') crawlerLunge(e);
+};
+
+/** Robust public update. intent: raw velocity, or a director mode (EnemyIntent). */
+export function updateCrawler(e: Crawler, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   const u = e.size / 56;
-  robustUpdate(e, dt, target, intent, 110 * u, 480 * u, 14, stepCrawler, resetCrawler);
+  robustUpdate(e, dt, target, intent, 110 * u, 480 * u, 14, stepCrawler, resetCrawler, modeCrawler);
 }
 
 function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): void {
@@ -256,7 +268,7 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
   const dy = target.y - e.y;
   const dist = Math.hypot(dx, dy) || 1;
   const walk = 66 * u;
-  let turnRate = 7;
+  let turnRate = 4.5;
   let sqT = 1;
   let pullT = 0;
   const rig = e.rig;
@@ -281,11 +293,18 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
         dvx = (dx / dist) * radial * walk + tx * walk * 0.6;
         dvy = (dy / dist) * radial * walk + ty * walk * 0.6;
       }
-      const k = e.moving ? 1 : 0.04;
-      steer(e, dvx * k, dvy * k, e.moving ? 9 : 16, dt);
+      const holding = e.mo.mode === 'hold';
+      const k = holding ? 0 : e.mo.mode ? 1 : e.moving ? 1 : 0.04;
+      steer(e, dvx * k, dvy * k, holding ? 14 : e.moving ? 9 : 16, dt);
+      if (holding) {
+        sqT = 0.9;
+        pullT = -1.5 * u;
+        rig.splay += (0.3 - rig.splay) * damp(8, dt);
+        e.heading = turnToward(e.heading, Math.atan2(dy, dx), 2.5 * dt); // brace facing the target
+      }
       e.tremble = e.moving ? 0 : 0.25 * u;
       e.charge += (0 - e.charge) * damp(3, dt);
-      rig.splay += (0 - rig.splay) * damp(6, dt);
+      if (e.mo.mode !== 'hold') rig.splay += (0 - rig.splay) * damp(6, dt);
       rig.skid = 0;
       e.cooldown -= dt;
       if (!intent && e.cooldown <= 0 && dist < 240 * u && dist > 35 * u && rand(e) < dt * 0.9) crawlerLunge(e);
@@ -316,6 +335,7 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
         e.heading = turnToward(e.heading, Math.atan2(dy, dx), 0.45);
         e.sq.v += 6; // snap into the stretch
         rig.splay = 1;
+        rigSetAir(rig, true); // pounce: all feet leave the ground
       }
       break;
     }
@@ -331,11 +351,12 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
       sqT = p < 0.45 ? 1.16 : 1;
       pullT = 3 * u;
       rig.splay = 1 - p * 0.6;
-      rig.skid = p > 0.4 ? Math.min(0.9, 0.75 * (1 - p) * 2 + 0.3) : 0.7; // planted feet scrape along through the whole lunge
+      rig.skid = 0;
       if (p >= 1) {
         e.mode = RECOVER;
         e.modeT = 0;
-        rig.skid = 0;
+        rigSetAir(rig, false); // land: feet plant where they are
+        e.sq.v -= 5; // impact squash, settles with overshoot
       }
       break;
     }
@@ -351,6 +372,16 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
     }
   }
 
+  // grounded: face the travel direction first, and never move faster than
+  // the gait can carry (no trailing / sliding feet)
+  if (!rig.air) {
+    if (e.mode === STALK && e.mo.mode !== 'evade') faceTravel(e); // evade = a sidestep, legs strafe
+    const v = Math.hypot(e.vx, e.vy);
+    if (v > rig.vmax) {
+      e.vx *= rig.vmax / v;
+      e.vy *= rig.vmax / v;
+    }
+  }
   stepSpring(e.sq, sqT, 240, 0.42, dt);
   stepSpring(e.pull, pullT, 200, 0.45, dt);
   e.tw += (0 - e.tw) * damp(14, dt);
@@ -358,7 +389,7 @@ function stepCrawler(e: Crawler, dt: number, target: Vec, intent: Vec | null): v
   e.x += e.vx * dt;
   e.y += e.vy * dt;
   const sp = Math.hypot(e.vx, e.vy);
-  if (turnRate > 0 && sp > 8 * u) e.heading = turnToward(e.heading, Math.atan2(e.vy, e.vx), turnRate * dt);
+  if (turnRate > 0 && sp > 0.5 * u) e.heading = turnToward(e.heading, Math.atan2(e.vy, e.vx), turnRate * dt);
   e.tailA = turnToward(e.tailA, e.heading, 4 * dt);
 
   e.palpT -= dt;

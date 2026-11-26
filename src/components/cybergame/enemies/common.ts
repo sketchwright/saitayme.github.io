@@ -120,6 +120,8 @@ export const randRange = (r: Rng, a: number, b: number): number => a + (b - a) *
 export interface CreateOpts {
   /** Nominal on-screen size in px (diameter-ish of the body + limbs). */
   size?: number;
+  /** Boss only: 0 Warden, 1 Echo, 2 Rogue Eye (default 2). */
+  variant?: number;
 }
 
 /** Seconds of the materialise-in effect started by spawnEnemy(). */
@@ -159,7 +161,39 @@ export interface EnemyBase extends Rng {
   debris: Debris | null;
   /** Input sanitising / smoothing state (see robustUpdate). */
   mo: Motion;
+  // ---- optional fields the game's AI director may set (all may be missing)
+  /** 'shieldBearer' | 'mender' | 'sniper' | 'suppressor' | anything else (ignored) */
+  role?: string;
+  /** shieldBearer dome radius (px) */
+  shieldR?: number;
+  /** mender: ally being repaired */
+  mendTarget?: Vec | null;
+  /** sniper: aim angle (radians) or aim point */
+  aim?: number | Vec;
+  /** elite affixes: Shielded, Splitting, Phasing, Vampiric, Hasted, Volatile */
+  affixes?: string[];
 }
+
+export type IntentMode = 'orbit' | 'hold' | 'lunge' | 'evade' | 'surround';
+
+/**
+ * Director intent: a mode instead of a raw velocity. Every field optional
+ * except mode; missing data falls back to sensible defaults.
+ */
+export interface EnemyIntent {
+  mode: IntentMode;
+  /** centre to orbit / surround / lunge at (default: the update target) */
+  point?: Vec;
+  /** direction the threat is coming from / moving along (evade) */
+  threatDir?: Vec;
+  /** orbit / surround radius (px) */
+  radius?: number;
+  /** surround: assigned angle around the point (radians) */
+  angle?: number;
+}
+
+export const isEnemyIntent = (v: unknown): v is EnemyIntent =>
+  !!v && typeof (v as EnemyIntent).mode === 'string';
 
 export interface Motion {
   init: boolean;
@@ -176,6 +210,15 @@ export interface Motion {
   to: Vec;
   /** count of snap re-plants (debug / tests) */
   snaps: number;
+  /** current director mode (null = raw velocity / own AI) + time in it */
+  mode: IntentMode | null;
+  modeT: number;
+  orbitR: number;
+  orbitDir: number;
+  surAng: number;
+  evX: number;
+  evY: number;
+  raw: Vec;
 }
 
 export const makeBase = (x: number, y: number, seed: number, size: number): EnemyBase => ({
@@ -199,8 +242,42 @@ export const makeBase = (x: number, y: number, seed: number, size: number): Enem
   deathT: -1,
   spawnT: 1,
   debris: null,
-  mo: { init: false, has: false, ix: 0, iy: 0, ivx: 0, ivy: 0, px: x, py: y, io: { x: 0, y: 0 }, to: { x: 0, y: 0 }, snaps: 0 },
+  mo: {
+    init: false,
+    has: false,
+    ix: 0,
+    iy: 0,
+    ivx: 0,
+    ivy: 0,
+    px: x,
+    py: y,
+    io: { x: 0, y: 0 },
+    to: { x: 0, y: 0 },
+    snaps: 0,
+    mode: null,
+    modeT: 0,
+    orbitR: 0,
+    orbitDir: 1,
+    surAng: 0,
+    evX: 0,
+    evY: 0,
+    raw: { x: 0, y: 0 },
+  },
 });
+
+/**
+ * Walkers turn before they travel: velocity is scaled down while the body
+ * still faces away from it, so they never skate sideways or backwards and
+ * their planted feet are not dragged across the body by a fast spin.
+ */
+export const faceTravel = (e: EnemyBase): void => {
+  const v = Math.hypot(e.vx, e.vy);
+  if (v < 1e-3) return;
+  const d = wrapAngle(Math.atan2(e.vy, e.vx) - e.heading);
+  const k = clamp((Math.cos(d) + 0.35) / 1.35, 0.12, 1);
+  e.vx *= k;
+  e.vy *= k;
+};
 
 /** Velocity steering toward a desired velocity with snappy accel. */
 export const steer = (e: EnemyBase, dvx: number, dvy: number, rate: number, dt: number): void => {
@@ -955,17 +1032,96 @@ export const SUB_DT = 1 / 30;
 const INTENT_W = 9; // spring angular frequency (1/s), critically damped
 
 export type StepFn<E> = (e: E, dt: number, target: Vec, intent: Vec | null) => void;
+export type ModeFn<E> = (e: E, mode: IntentMode) => void;
+
+const EVADE_TIME = 0.38;
+
+/** Mode entry: pick an orbit radius / direction, surround angle, evade side. */
+const enterMode = (e: EnemyBase, it: EnemyIntent, c: Vec): void => {
+  const m = e.mo;
+  const dx = e.x - c.x;
+  const dy = e.y - c.y;
+  const d = Math.hypot(dx, dy) || 1;
+  m.orbitR = it.radius && it.radius > 0 ? it.radius : clamp(d, e.size * 1.6, e.size * 4.5);
+  m.orbitDir = (e.seed & 1) === 0 ? 1 : -1;
+  m.surAng = it.angle !== undefined && Number.isFinite(it.angle) ? it.angle : Math.atan2(dy, dx) + ((e.seed * 2.39996) % 1) * 0.6;
+  // evade: sidestep perpendicular to the threat, toward the side we already lean
+  let tx = it.threatDir?.x ?? -dx / d;
+  let ty = it.threatDir?.y ?? -dy / d;
+  const tl = Math.hypot(tx, ty) || 1;
+  tx /= tl;
+  ty /= tl;
+  let px = -ty;
+  let py = tx;
+  if (px * e.vx + py * e.vy < 0 || (Math.abs(e.vx) + Math.abs(e.vy) < 1 && (e.seed & 2) === 0)) {
+    px = -px;
+    py = -py;
+  }
+  m.evX = px;
+  m.evY = py;
+};
+
+/** Desired velocity for a director mode (written into e.mo.raw). */
+const resolveIntent = (e: EnemyBase, it: EnemyIntent, target: Vec, cruise: number): Vec => {
+  const m = e.mo;
+  const out = m.raw;
+  const c = it.point && Number.isFinite(it.point.x) && Number.isFinite(it.point.y) ? it.point : target;
+  const dx = e.x - c.x;
+  const dy = e.y - c.y;
+  const d = Math.hypot(dx, dy) || 1;
+  const rx = dx / d;
+  const ry = dy / d;
+  switch (it.mode) {
+    case 'orbit': {
+      // circle-strafe: tangential cruise + radial correction toward the ring
+      const r = it.radius && it.radius > 0 ? it.radius : m.orbitR;
+      const radial = clamp((r - d) * 1.6, -cruise, cruise);
+      out.x = -ry * m.orbitDir * cruise + rx * radial;
+      out.y = rx * m.orbitDir * cruise + ry * radial;
+      break;
+    }
+    case 'surround': {
+      const r = it.radius && it.radius > 0 ? it.radius : m.orbitR;
+      const a = it.angle !== undefined && Number.isFinite(it.angle) ? it.angle : m.surAng;
+      const gx = c.x + Math.cos(a) * r - e.x;
+      const gy = c.y + Math.sin(a) * r - e.y;
+      const gd = Math.hypot(gx, gy) || 1;
+      const sp = Math.min(cruise, gd * 2.2); // arrive and settle
+      out.x = (gx / gd) * sp;
+      out.y = (gy / gd) * sp;
+      break;
+    }
+    case 'lunge': {
+      // close in while the type's own wind-up / burst plays
+      const sp = Math.min(cruise * 0.7, d * 2);
+      out.x = -rx * sp;
+      out.y = -ry * sp;
+      break;
+    }
+    case 'evade': {
+      const k = m.modeT < EVADE_TIME ? 1 - (m.modeT / EVADE_TIME) * (m.modeT / EVADE_TIME) : 0;
+      out.x = m.evX * cruise * 2.1 * k;
+      out.y = m.evY * cruise * 2.1 * k;
+      break;
+    }
+    default:
+      out.x = 0;
+      out.y = 0;
+  }
+  return out;
+};
 
 export function robustUpdate<E extends EnemyBase>(
   e: E,
   dt: number,
   target: Vec,
-  intent: Vec | null | undefined,
+  intent: Vec | EnemyIntent | null | undefined,
   maxIntent: number,
   maxSpeed: number,
   maxTurn: number,
   step: StepFn<E>,
   reset: (e: E) => void,
+  onMode?: ModeFn<E>,
 ): void {
   if (!(dt > 0)) return;
   if (dt > MAX_DT) dt = MAX_DT;
@@ -996,17 +1152,36 @@ export function robustUpdate<E extends EnemyBase>(
     to.x = e.x;
     to.y = e.y;
   }
+  // director modes: track entry (pick radius / side / angle, fire hooks)
+  const dIntent = isEnemyIntent(intent) ? intent : null;
+  const mode = dIntent ? dIntent.mode : null;
+  if (mode !== m.mode) {
+    m.mode = mode;
+    m.modeT = 0;
+    if (dIntent) {
+      enterMode(e, dIntent, dIntent.point ?? to);
+      if (onMode && e.deathT < 0) onMode(e, dIntent.mode);
+    }
+  }
+  const cruise = maxIntent * 0.62;
   const n = Math.max(1, Math.ceil(dt / SUB_DT - 1e-6));
   const h = dt / n;
   for (let s = 0; s < n; s++) {
     let it: Vec | null = null;
-    if (intent && Number.isFinite(intent.x) && Number.isFinite(intent.y)) {
-      let ix = intent.x;
-      let iy = intent.y;
+    let src: Vec | null = null;
+    let cap = maxIntent;
+    if (dIntent) {
+      src = resolveIntent(e, dIntent, to, cruise);
+      if (dIntent.mode === 'evade') cap = maxIntent * 2.2;
+      m.modeT += h;
+    } else if (intent && Number.isFinite((intent as Vec).x) && Number.isFinite((intent as Vec).y)) src = intent as Vec;
+    if (src) {
+      let ix = src.x;
+      let iy = src.y;
       const l = Math.hypot(ix, iy);
-      if (l > maxIntent) {
-        ix *= maxIntent / l;
-        iy *= maxIntent / l;
+      if (l > cap) {
+        ix *= cap / l;
+        iy *= cap / l;
       }
       if (!m.has) {
         m.has = true;
@@ -1014,7 +1189,7 @@ export function robustUpdate<E extends EnemyBase>(
         m.iy = clamp(e.vy, -maxIntent, maxIntent);
         m.ivx = m.ivy = 0;
       }
-      const w = INTENT_W;
+      const w = dIntent && dIntent.mode === 'evade' ? INTENT_W * 2 : INTENT_W;
       m.ivx += (w * w * (ix - m.ix) - 2 * w * m.ivx) * h;
       m.ivy += (w * w * (iy - m.iy) - 2 * w * m.ivy) * h;
       m.ix += m.ivx * h;

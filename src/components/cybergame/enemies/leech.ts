@@ -48,6 +48,8 @@ import {
   updateTrail,
   whiteA,
   robustUpdate,
+  EnemyIntent,
+  IntentMode,
 } from './common';
 import { solveChain } from './ik';
 
@@ -278,9 +280,15 @@ const resetLeech = (e: Leech): void => {
 };
 
 /** Robust public update (see robustUpdate). */
-export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | null): void {
+const modeLeech = (e: Leech, mode: IntentMode): void => {
+  if (mode === 'lunge' && (e.mode === SEEK || e.mode === RECOIL)) leechToggleLatch(e);
+  if (mode === 'evade' && e.mode === LATCHED) leechToggleLatch(e);
+};
+
+/** Robust public update (see robustUpdate). */
+export function updateLeech(e: Leech, dt: number, target: Vec, intent?: Vec | EnemyIntent | null): void {
   const u = e.size / 64;
-  robustUpdate(e, dt, target, intent, 110 * u, 420 * u, 14, stepLeech, resetLeech);
+  robustUpdate(e, dt, target, intent, 110 * u, 420 * u, 14, stepLeech, resetLeech, modeLeech);
 }
 
 function stepLeech(e: Leech, dt: number, target: Vec, intent: Vec | null): void {
@@ -317,7 +325,7 @@ function stepLeech(e: Leech, dt: number, target: Vec, intent: Vec | null): void 
       steer(e, dvx, dvy, 6, dt);
       e.charge += (0 - e.charge) * damp(2, dt);
       e.drain += (0 - e.drain) * damp(2, dt);
-      if (e.auto && e.cooldown <= 0 && dist < reach * 3.2) {
+      if (e.auto && !e.mo.mode && e.cooldown <= 0 && dist < reach * 3.2) {
         e.mode = FREEZE;
         e.modeT = 0;
       }
@@ -374,7 +382,7 @@ function stepLeech(e: Leech, dt: number, target: Vec, intent: Vec | null): void 
       compT = 0.92 + pump * 0.08;
       e.heading = turnToward(e.heading, Math.atan2(dy, dx), 6 * dt);
       turn = 0;
-      if (e.auto && e.modeT > 2.6) {
+      if (e.auto && e.modeT > 2.6 && e.mo.mode !== 'hold') {
         e.mode = RECOIL;
         e.modeT = 0;
       }

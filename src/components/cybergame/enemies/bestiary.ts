@@ -4,6 +4,8 @@
 import {
   BOSS_SIZE,
   Boss,
+  BossTell,
+  bossVariantCount,
   CRAWLER_SIZE,
   Enemy,
   EnemyKind,
@@ -82,6 +84,9 @@ const state = {
   paused: false,
   stress: false,
   bossP2: false,
+  bossPhase: 0,
+  bossVariant: 2,
+  bossTell: 0,
   chaos: false,
   time: 0,
   mouseX: -1,
@@ -104,7 +109,7 @@ const CELL_DEFS: Array<Omit<Cell, 'x' | 'y' | 'w' | 'h' | 'enemies' | 'target' |
   { kind: 'leech', no: '03', label: 'LEECH', sub: 'SEGMENTED LANCE / DRAIN', hint: 'CLICK: LATCH / RELEASE', span: 1, hMul: 1 },
   { kind: 'swarm', no: '04', label: 'SWARM-NODE', sub: 'CUBE CLUSTER / SPLITS', hint: 'CLICK: SPLIT', span: 1, hMul: 1 },
   { kind: 'sentinel', no: '05', label: 'SENTINEL', sub: 'ARMORED LENS TOWER', hint: 'CLICK: CHARGE + FIRE', span: 2, hMul: 1 },
-  { kind: 'boss', no: '06', label: 'BOSS / ROGUE-AI EYE', sub: 'PHASE 1', hint: 'CLICK OR B: TOGGLE PHASE', span: 99, hMul: 1.45 },
+  { kind: 'boss', no: '06', label: 'BOSS / ROGUE EYE', sub: 'PHASE 1  TELL NONE', hint: 'B: PHASE  V: VARIANT  T: TELL', span: 99, hMul: 1.6 },
   { kind: 'pursuit', no: '07', label: 'PURSUIT', sub: 'ALL TYPES CHASE THE CURSOR', hint: 'CLICK: SPLIT NEAREST NODE / PROVOKE ALL', span: 99, hMul: 1.5 },
 ];
 
@@ -126,9 +131,9 @@ function populate(c: Cell): void {
       break;
     }
     case 'boss': {
-      const b = spawn('boss', cx, cy) as Boss;
-      setBossPhase(b, state.bossP2 ? 2 : 1);
-      b.p2 = state.bossP2 ? 1 : 0;
+      const b = createEnemy('boss', cx, state.bossVariant === 0 ? c.h * 0.3 : cy, nextSeed(), { size: SIZES.boss * state.scale, variant: state.bossVariant }) as Boss;
+      setBossPhase(b, state.bossPhase);
+      b.bossTell = TELLS[state.bossTell];
       c.enemies.push(b);
       break;
     }
@@ -235,12 +240,38 @@ canvas.addEventListener('click', (ev) => {
   }
 });
 
-function toggleBoss(): void {
-  state.bossP2 = !state.bossP2;
-  for (const c of cells) for (const e of c.enemies) if (e.kind === 'boss') setBossPhase(e, state.bossP2 ? 2 : 1);
+const TELLS: BossTell[] = ['none', 'laserGrid', 'charge', 'teleport', 'clone', 'tether', 'spiral', 'beam', 'hack', 'sweep', 'burst', 'summon'];
+const VARIANT_NAMES = ['WARDEN.EXE', 'ECHO', 'ROGUE EYE'];
+
+function bossSub(): void {
   const bc = cells.find((c) => c.kind === 'boss');
-  if (bc) bc.sub = state.bossP2 ? 'PHASE 2 / CORE EXPOSED' : 'PHASE 1';
+  if (!bc) return;
+  bc.label = `BOSS / ${VARIANT_NAMES[state.bossVariant]}`;
+  bc.sub = `PHASE ${state.bossPhase + 1}  TELL ${TELLS[state.bossTell].toUpperCase()}`;
+}
+
+/** B: cycle phase 1 -> 2 -> 3 -> 1 */
+function toggleBoss(): void {
+  state.bossPhase = (state.bossPhase + 1) % 3;
+  state.bossP2 = state.bossPhase > 0;
+  for (const c of cells) for (const e of c.enemies) if (e.kind === 'boss') setBossPhase(e, state.bossPhase);
+  bossSub();
   syncButtons();
+}
+
+/** V: next boss variant (respawns the boss cell) */
+function cycleVariant(): void {
+  state.bossVariant = (state.bossVariant + 1) % bossVariantCount;
+  const bc = cells.find((c) => c.kind === 'boss');
+  if (bc) populate(bc);
+  bossSub();
+}
+
+/** T: cycle the telegraph shown on the boss */
+function cycleTell(): void {
+  state.bossTell = (state.bossTell + 1) % TELLS.length;
+  for (const c of cells) for (const e of c.enemies) if (e.kind === 'boss') e.bossTell = TELLS[state.bossTell];
+  bossSub();
 }
 
 function lungeAll(): void {
@@ -375,6 +406,8 @@ bind('b-boss', toggleBoss);
 bind('b-split', splitAll);
 bind('b-hit', hitAll);
 bind('b-chaos', toggleChaos);
+bind('b-variant', cycleVariant);
+bind('b-tell', cycleTell);
 bind('b-kill', killAll);
 bind('b-spawn', respawnAll);
 bind('b-slow', () => {
@@ -408,6 +441,8 @@ window.addEventListener('keydown', (ev) => {
   } else if (k === 'p') toggleStress();
   else if (k === 'h') hitAll();
   else if (k === 'c') toggleChaos();
+  else if (k === 'v') cycleVariant();
+  else if (k === 't') cycleTell();
   else if (k === 'k') killAll();
   else if (k === 'n') respawnAll();
   else if (k === '1' || k === '2' || k === '3') setScale(Number(k));
