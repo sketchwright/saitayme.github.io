@@ -15,6 +15,7 @@ import { RARITY_LABEL, SYNERGIES, UPGRADE_BY_ID, computeSynergies } from './cybe
 import type { OwnedUpgrade } from './cybergame/types';
 import type { UpgradeDef } from './cybergame/content/upgrades';
 import { ROUTE_INFO } from './cybergame/content/routes';
+import { ENCOUNTERS } from './cybergame/content/encounters';
 import { SECTORS } from './cybergame/content/sectors';
 import { parseSeed } from './cybergame/rng';
 
@@ -504,6 +505,14 @@ const CyberGame = ({ isVisible, onClose }: CyberGameProps) => {
                       {name}
                     </div>
                     <p className="mt-2 text-xs text-neutral-300 leading-relaxed">{line}</p>
+                    {t !== 'boss' && run.routeEnc[i] && (
+                      <div className="mt-3 px-2 py-1.5 text-[10px] leading-snug" style={{ border: '1px dashed rgba(240,126,65,0.5)' }}>
+                        <span className="tracking-[0.2em]" style={{ color: run.routeEnc[i] === 'standard' ? '#9a9aa2' : ORANGE }}>
+                          WAVE TYPE // {ENCOUNTERS[run.routeEnc[i]].name}
+                        </span>
+                        <span className="block text-neutral-400 mt-0.5">{ENCOUNTERS[run.routeEnc[i]].rule}</span>
+                      </div>
+                    )}
                     <div className="mt-3 text-[10px] leading-relaxed">
                       <div>
                         <span style={{ color: ORANGE }}>REWARD </span>

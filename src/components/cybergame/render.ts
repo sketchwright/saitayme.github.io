@@ -29,6 +29,7 @@ import {
   U_LATCH,
 } from './types';
 import { SYNERGIES, UPGRADE_BY_ID } from './content/upgrades';
+import { ENCOUNTERS } from './content/encounters';
 import { SECTORS } from './content/sectors';
 
 const ORANGE = '#f07e41';
@@ -123,6 +124,20 @@ export class Renderer {
   private ox = 0;
   private oy = 0;
   private builtFor = '';
+  private dark: HTMLCanvasElement = makeCanvas(1, 1);
+  /** cached soft hole used to cut the blackout darkness */
+  private readonly hole = (() => {
+    const c = makeCanvas(128, 128);
+    const x = c.getContext('2d');
+    if (x) {
+      const grd = x.createRadialGradient(64, 64, 26, 64, 64, 64);
+      grd.addColorStop(0, 'rgba(0,0,0,1)');
+      grd.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = grd;
+      x.fillRect(0, 0, 128, 128);
+    }
+    return c;
+  })();
 
   constructor(ctx: CanvasRenderingContext2D) {
     this.ctx = ctx as Ctx;
@@ -418,6 +433,8 @@ export class Renderer {
     this.drawUnitMarks(g);
     if (g.phase !== 'menu' && g.phase !== 'summary' && g.dying < 0) this.drawShip(g);
 
+    this.drawEncounterWorld(g);
+
     // dark fragments
     c.fillStyle = PALETTE[C_GRAY];
     for (const p of g.particles) {
@@ -429,9 +446,12 @@ export class Renderer {
     }
     c.globalAlpha = 1;
 
+    if (g.enc === 'blackout' && (g.phase === 'playing' || g.phase === 'paused')) this.drawDarkness(g);
+
     // ---- additive
     c.globalCompositeOperation = 'lighter';
     this.drawUnitGlow(g);
+    this.drawEncounterGlow(g);
     if (g.phase !== 'menu' && g.phase !== 'summary' && g.dying < 0) this.drawShipGlow(g);
     this.drawEBullets(g);
     this.drawBullets(g);
@@ -528,6 +548,34 @@ export class Renderer {
         c.moveTo(e.x, e.y);
         c.lineTo(e.x + Math.cos(u.tellA) * (80 + f * 320), e.y + Math.sin(u.tellA) * (80 + f * 320));
         c.stroke();
+      }
+      if (u.role === 'sniper' || u.role === 'suppressor') {
+        if (u.pt === 1) {
+          // fire-line tell: the locked line it is about to fire along
+          const sn = u.role === 'sniper';
+          const f = 0.5 + 0.5 * Math.sin(g.time * (sn ? 30 : 18));
+          c.strokeStyle = sn ? `rgba(244,239,232,${(0.35 + f * 0.5).toFixed(2)})` : `rgba(255,90,42,${(0.35 + f * 0.45).toFixed(2)})`;
+          c.lineWidth = sn ? 1 : 2;
+          c.setLineDash(sn ? [] : [10, 6]);
+          c.beginPath();
+          c.moveTo(e.x, e.y);
+          c.lineTo(e.x + Math.cos(u.tellA) * 1200, e.y + Math.sin(u.tellA) * 1200);
+          c.stroke();
+          c.setLineDash([]);
+        }
+      }
+      if (u.affixes.length || u.hunted || (u.role && u.role !== 'diver' && u.role !== 'flanker' && u.role !== 'surrounder')) {
+        const tag = u.hunted
+          ? `TARGET ${Math.max(0, g.huntT).toFixed(0)}s`
+          : [u.affixes.join(' '), u.role === 'shieldBearer' ? 'BEARER' : u.role === 'mender' ? 'MENDER' : u.role === 'sniper' ? 'SNIPER' : u.role === 'suppressor' ? 'SUPPRESSOR' : '']
+              .filter(Boolean)
+              .join(' // ');
+        if (tag) {
+          c.font = `600 8px ${FONT_UI}`;
+          c.textAlign = 'center';
+          c.fillStyle = u.hunted ? CORE : u.affixes.length ? ORANGE : '#9a9aa2';
+          c.fillText(tag.toUpperCase(), e.x, e.y - u.r - 12);
+        }
       }
       if (u.elite) {
         // elite bracket tag
@@ -664,15 +712,176 @@ export class Renderer {
     c.globalAlpha = 1;
   }
 
+  /** Encounter layers in world space (normal blend). */
+  private drawEncounterWorld(g: Game): void {
+    const c = this.ctx;
+    // corrupted pools
+    for (const pl of g.pools) {
+      const tele = pl.a < 1;
+      c.globalAlpha = tele ? 0.25 + 0.25 * Math.sin(g.time * 14) : 0.55;
+      c.fillStyle = '#2a0805';
+      c.beginPath();
+      c.arc(pl.x, pl.y, pl.r * (tele ? pl.a : 1), 0, TAU);
+      c.fill();
+      c.globalAlpha = 0.8;
+      c.strokeStyle = CORE;
+      c.lineWidth = 1;
+      c.setLineDash(tele ? [4, 6] : []);
+      c.beginPath();
+      c.arc(pl.x, pl.y, pl.r, 0, TAU);
+      c.stroke();
+      c.setLineDash([]);
+      if (!tele) {
+        c.fillStyle = CORE;
+        for (let i = 0; i < 5; i++) {
+          const a = Math.random() * TAU;
+          const d = Math.random() * pl.r;
+          c.globalAlpha = 0.3 + Math.random() * 0.4;
+          c.fillRect(pl.x + Math.cos(a) * d, pl.y + Math.sin(a) * d, 6, 1.2);
+        }
+      }
+    }
+    // defend node
+    const n = g.node;
+    if (n.on) {
+      c.globalAlpha = 1;
+      c.beginPath();
+      hexPath(c, n.x, n.y, 18, g.time * 0.6);
+      c.fillStyle = '#120c08';
+      c.fill();
+      c.strokeStyle = WHITE;
+      c.lineWidth = 1.5;
+      c.stroke();
+      c.strokeStyle = 'rgba(240,126,65,0.25)';
+      c.lineWidth = 3;
+      c.beginPath();
+      c.arc(n.x, n.y, 28, 0, TAU);
+      c.stroke();
+      c.strokeStyle = n.hp / n.max < 0.35 ? CORE : ORANGE;
+      c.beginPath();
+      c.arc(n.x, n.y, 28, -Math.PI / 2, -Math.PI / 2 + TAU * Math.max(0, n.hp / n.max));
+      c.stroke();
+      c.font = `600 9px ${FONT_UI}`;
+      c.textAlign = 'center';
+      c.fillStyle = WHITE;
+      c.fillText(`NODE ${Math.ceil(n.t)}s`, n.x, n.y + 44);
+    }
+    // ambush warning markers along the bottom edge
+    for (const u of g.units) {
+      if (u.dead || u.from !== 'below' || u.delay <= 0) continue;
+      if (Math.sin(g.time * 14) < -0.6) continue;
+      const x = u.p2x;
+      const y = g.FH - 16;
+      c.globalAlpha = 0.9;
+      c.fillStyle = CORE;
+      c.beginPath();
+      c.moveTo(x, y - 14);
+      c.lineTo(x + 10, y);
+      c.lineTo(x - 10, y);
+      c.closePath();
+      c.fill();
+      c.fillRect(x - 1, y - 30, 2, 12);
+    }
+    c.globalAlpha = 1;
+  }
+
+  /** Encounter layers in world space (additive): walls, beams, blast tells, scan ring. */
+  private drawEncounterGlow(g: Game): void {
+    const c = this.ctx;
+    for (const w of g.hazWalls) {
+      if (!w.active) continue;
+      const g0 = w.gapX - w.gapW / 2;
+      const g1 = w.gapX + w.gapW / 2;
+      c.globalAlpha = 0.85;
+      c.fillStyle = CORE;
+      c.fillRect(0, w.y - 2, g0, 4);
+      c.fillRect(g1, w.y - 2, g.FW - g1, 4);
+      c.globalAlpha = 0.25;
+      c.fillRect(0, w.y - 7, g0, 14);
+      c.fillRect(g1, w.y - 7, g.FW - g1, 14);
+      c.globalAlpha = 0.9;
+      c.fillStyle = WHITE;
+      c.fillRect(g0 - 2, w.y - 9, 2, 18);
+      c.fillRect(g1, w.y - 9, 2, 18);
+    }
+    for (const b of g.beams) {
+      if (!b.active) continue;
+      const f = b.life / 0.25;
+      c.globalAlpha = 0.5 * f;
+      c.strokeStyle = CORE;
+      c.lineWidth = 10;
+      c.beginPath();
+      c.moveTo(b.x1, b.y1);
+      c.lineTo(b.x2, b.y2);
+      c.stroke();
+      c.globalAlpha = f;
+      c.strokeStyle = WHITE;
+      c.lineWidth = 2;
+      c.stroke();
+    }
+    for (const b of g.blasts) {
+      if (!b.active) continue;
+      const f = 1 - b.t / b.max;
+      c.globalAlpha = 0.4 + 0.5 * (Math.sin(g.time * 40) > 0 ? 1 : 0);
+      c.strokeStyle = CORE;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(b.x, b.y, 85 * f, 0, TAU);
+      c.stroke();
+      c.globalAlpha = 0.25;
+      c.beginPath();
+      c.arc(b.x, b.y, 85, 0, TAU);
+      c.stroke();
+    }
+    if (g.scanR >= 0) {
+      c.globalAlpha = 0.5;
+      c.strokeStyle = ORANGE;
+      c.lineWidth = 2;
+      c.beginPath();
+      c.arc(g.px, g.py, g.scanR, 0, TAU);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+
+  /** Blackout: darkness with holes around the ship, the muzzle flash and the scan ring. */
+  private drawDarkness(g: Game): void {
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    if (this.dark.width !== cw || this.dark.height !== ch) this.dark = makeCanvas(cw, ch);
+    const d = this.dark.getContext('2d');
+    if (!d) return;
+    d.setTransform(1, 0, 0, 1, 0, 0);
+    d.globalCompositeOperation = 'source-over';
+    d.clearRect(0, 0, cw, ch);
+    d.fillStyle = 'rgba(2,2,3,0.94)';
+    d.fillRect(0, 0, cw, ch);
+    d.globalCompositeOperation = 'destination-out';
+    d.setTransform(this.k, 0, 0, this.k, this.ox, this.oy);
+    const r = 110 + (g.muzzle > 0 ? 70 : 0) + Math.sin(g.time * 30) * 4;
+    d.drawImage(this.hole, g.px - r, g.py - r, r * 2, r * 2);
+    if (g.scanR >= 0) {
+      d.strokeStyle = 'rgba(0,0,0,0.9)';
+      d.lineWidth = 110;
+      d.beginPath();
+      d.arc(g.px, g.py, Math.max(1, g.scanR - 40), 0, TAU);
+      d.stroke();
+    }
+    const c = this.ctx;
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(this.dark, 0, 0);
+    this.world();
+  }
+
   /** Screen-space boss effects: corrupted edges, static bands, intro card. */
   private drawBossScreen(g: Game): void {
     const bc = g.bc;
-    if (!bc) return;
     const c = this.ctx;
     const k = g.scale;
     const x0 = g.fx0;
-    if (bc.inset > 0) {
-      const w = bc.inset * k;
+    const inset = Math.max(g.inset, bc ? bc.inset : 0);
+    if (inset > 0) {
+      const w = inset * k;
       c.fillStyle = 'rgba(40,6,4,0.72)';
       c.fillRect(x0, 0, w, g.H);
       c.fillRect(x0 + FIELD_W * k - w, 0, w, g.H);
@@ -688,6 +897,7 @@ export class Renderer {
       c.fillRect(x0 + FIELD_W * k - w - 1, 0, 2, g.H);
       c.globalAlpha = 1;
     }
+    if (!bc) return;
     if (bc.tether.on && !g.reducedMotion) {
       // vision corruption: static bands only
       for (let i = 0; i < 5; i++) {
@@ -1270,7 +1480,7 @@ export class Renderer {
       this.label(
         narrow
           ? `S${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `W${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`
-          : `SECTOR ${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `WAVE ${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}`}`,
+          : `SECTOR ${r.sector + 1}/${SECTORS.length} · ${sec.name} · ${g.isBoss ? 'BOSS' : `WAVE ${cur + 1}/${nW}${g.waveElite ? ' ELITE' : ''}${g.enc !== 'standard' ? ` · ${ENCOUNTERS[g.enc].name}` : ''}`}`,
         cx,
         top + 12,
         'center',

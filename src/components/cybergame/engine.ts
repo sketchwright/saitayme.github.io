@@ -6,6 +6,7 @@
 // spawning, type behaviours, combat, upgrades, routes and the run structure.
 import {
   Enemy,
+  EnemyIntent,
   EnemyKind,
   Vec,
   crawlerLunge,
@@ -65,6 +66,8 @@ import {
   SfxName,
   TAU,
   TELL_TIME,
+  Affix,
+  Role,
   U_ACT,
   U_BOSS,
   U_DECOY,
@@ -94,6 +97,7 @@ import {
 import { FLAVOR, GroupDef, KIND_STATS, SECTORS, SectorDef } from './content/sectors';
 import { BossCtl, BossHost } from './bosses';
 import { generateRoutes } from './content/routes';
+import { DEFEND_TIME, ENCOUNTERS, EncounterId, HUNT_ESCAPE, SECTOR_ENCOUNTERS } from './content/encounters';
 import { ANOMALIES, AnomalyCtx, AnomalyDef } from './content/anomalies';
 
 export interface GameEvents {
@@ -121,6 +125,10 @@ export interface RunState {
   /** waves cleared in the current sector */
   waveInSector: number;
   routes: NodeType[];
+  /** encounter type of the wave each route leads to */
+  routeEnc: EncounterId[];
+  pendingEnc: EncounterId;
+  lastEnc: EncounterId;
   /** what starts once the current detour (cache / anomaly) is resolved */
   pending: 'wave' | 'boss';
   wavesCleared: number;
@@ -145,6 +153,41 @@ export interface RunState {
 
 const tmpV: Vec = { x: 0, y: 0 };
 const intentV: Vec = { x: 0, y: 0 };
+const rolePoint: Vec = { x: 0, y: 0 };
+const roleIntent: EnemyIntent = { mode: 'hold', point: rolePoint, radius: 0, angle: 0 };
+const HOLD: EnemyIntent = { mode: 'hold' };
+
+export interface HazWall {
+  active: boolean;
+  y: number;
+  gapX: number;
+  gapV: number;
+  gapW: number;
+  hit: boolean;
+}
+export interface Pool {
+  x: number;
+  y: number;
+  r: number;
+  a: number; // 0..1 fade (telegraph while < 1)
+  vx: number;
+  vy: number;
+}
+export interface Blast {
+  active: boolean;
+  x: number;
+  y: number;
+  t: number;
+  max: number;
+}
+export interface Beam {
+  active: boolean;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  life: number;
+}
 
 export class Game implements BossHost {
   phase: Phase = 'menu';
@@ -232,6 +275,23 @@ export class Game implements BossHost {
   private fightBonus = false;
   /** HARD difficulty: tougher, denser, harder-hitting enemies */
   hard = false;
+  // ---- encounter state
+  enc: EncounterId = 'standard';
+  private encHp = 1;
+  readonly hazWalls: HazWall[] = Array.from({ length: 4 }, () => ({ active: false, y: 0, gapX: 0, gapV: 0, gapW: 100, hit: false }));
+  private hazT = 0;
+  inset = 0;
+  scanR = -1;
+  private scanT = 0;
+  pools: Pool[] = [];
+  private poolT = 0;
+  slowed = false;
+  node = { on: false, x: 0, y: 0, hp: 100, max: 100, t: 0 };
+  huntId = -1;
+  huntT = 0;
+  readonly blasts: Blast[] = Array.from({ length: 8 }, () => ({ active: false, x: 0, y: 0, t: 0, max: 0.7 }));
+  readonly beams: Beam[] = Array.from({ length: 8 }, () => ({ active: false, x1: 0, y1: 0, x2: 0, y2: 0, life: 0 }));
+  private encBonus = false;
 
   private dmgScale(): number {
     return this.sector.dmgMul * (this.hard ? 1.3 : 1);
@@ -498,6 +558,9 @@ export class Game implements BossHost {
       sector: 0,
       waveInSector: 0,
       routes: [],
+      routeEnc: [],
+      pendingEnc: 'standard',
+      lastEnc: 'standard',
       pending: 'wave',
       wavesCleared: 0,
       waveNo: 0,
@@ -550,6 +613,17 @@ export class Game implements BossHost {
     this.waveActive = false;
     this.isBoss = false;
     this.boss = null;
+    this.enc = 'standard';
+    this.encHp = 1;
+    this.inset = 0;
+    this.scanR = -1;
+    this.pools = [];
+    this.slowed = false;
+    this.node.on = false;
+    this.huntId = -1;
+    for (const w of this.hazWalls) w.active = false;
+    for (const b of this.blasts) b.active = false;
+    for (const b of this.beams) b.active = false;
     if (this.hacked) {
       this.hacked = null;
       this.hackT = 0;
@@ -572,6 +646,13 @@ export class Game implements BossHost {
     if (!r) return;
     const waves = this.sector.waves.length;
     r.routes = generateRoutes(r.mapRng, r.sector, r.waveInSector + 1, this.hp / this.stats.maxHp, r.waveInSector >= waves);
+    const used: EncounterId[] = [];
+    r.routeEnc = r.routes.map((t) => {
+      if (t === 'boss') return 'standard';
+      const id = this.pickEncounter(used);
+      used.push(id);
+      return id;
+    });
     this.setPhase('map');
     this.ev.changed();
   }
@@ -593,6 +674,7 @@ export class Game implements BossHost {
     if (!r || this.phase !== 'map') return;
     const t = r.routes[index];
     if (!t) return;
+    r.pendingEnc = r.routeEnc[index] ?? 'standard';
     r.toast = '';
     this.sfx('click');
     const bossStep = r.waveInSector >= this.sector.waves.length;
@@ -960,7 +1042,7 @@ export class Game implements BossHost {
     // always a fresh entity: entities are never reused
     const e = createEnemy(kind, x, y, (Math.random() * 0x7fffffff) | 0, { size });
     if (e.kind === 'leech') e.auto = false;
-    const hpMul = this.sector.hpMul * (1 + (0.03 + 0.06 * this.runSector()) * (this.run ? this.run.waveInSector : 0)) * (elite ? 1.8 : 1) * (this.hard ? 1.3 : 1);
+    const hpMul = this.sector.hpMul * this.encHp * (1 + (0.03 + 0.06 * this.runSector()) * (this.run ? this.run.waveInSector : 0)) * (elite ? 1.8 : 1) * (this.hard ? 1.3 : 1);
     const hp = Math.max(1, Math.round(ks.hp * hpMul));
     const u: Unit = {
       id: this.nextId++,
@@ -999,6 +1081,15 @@ export class Game implements BossHost {
       dead: false,
       life: 0,
       belowT: 0,
+      role: '',
+      roleT: rand(1.5, 3),
+      dome: 0,
+      domeMax: 0,
+      affixes: [],
+      ward: 0,
+      phaseT: 0,
+      phaseCd: rand(2, 4),
+      hunted: false,
     };
     this.units.push(u);
     return u;
@@ -1102,9 +1193,26 @@ export class Game implements BossHost {
           gx = x;
           gy = y + 40;
           break;
+        case 'pincer': {
+          // both flanks at once, same height
+          const ps = i % 2 === 0 ? -1 : 1;
+          x = ps < 0 ? -36 : FW + 36;
+          y = FH * 0.22 + Math.floor(i / 2) * 26;
+          gx = ps < 0 ? 90 : FW - 90;
+          gy = y;
+          break;
+        }
+        case 'below':
+          // ambush: from below, after a warning marker, never straight under the ship
+          x = rand(40, FW - 40);
+          if (Math.abs(x - this.px) < 120) x = this.px < FW / 2 ? rand(Math.min(FW - 40, this.px + 120), FW - 40) : rand(40, Math.max(40, this.px - 120));
+          y = FH + 34;
+          gx = x;
+          gy = FH * 0.45;
+          break;
       }
       if (g.kind === 'sentinel' && (g.from === 'boss' || g.from === 'phase' || g.from === 'top' || g.from === 'corners')) [gx, gy] = this.stationFor(side);
-      const eliteChance = elite ? 0.55 : g.from === 'boss' ? 0 : 0.04 + 0.04 * (this.run ? this.run.waveInSector : 0) + 0.05 * this.runSector();
+      const eliteChance = this.phase === 'menu' ? 0 : elite ? 0.55 : g.from === 'boss' ? 0 : 0.04 + 0.04 * (this.run ? this.run.waveInSector : 0) + 0.05 * this.runSector();
       const u = this.makeUnit(g.kind, x, y, Math.random() < eliteChance);
       if (!u) break;
       made++;
@@ -1136,9 +1244,520 @@ export class Game implements BossHost {
         } else u.state = U_ACT;
       }
       if ((g.kind === 'leech' || g.kind === 'crawler') && g.from === 'boss') u.state = U_HUNT;
+      if (g.from === 'below') {
+        u.delay = Math.max(u.delay, 1.4 + i * 0.15);
+        u.p2x = x;
+      }
+      if (g.from === 'pincer') u.delay = Math.floor(i / 2) * (g.gap ?? 0.3);
+      this.applyRole(u, g.role ?? this.pickRole(g.kind));
+      if (u.elite) this.rollAffixes(u);
       if (u.delay <= 0) spawnEnemy(u.e);
     }
     return made;
+  }
+
+  // ================================================================ roles & affixes
+  private pickRole(kind: EnemyKind): Role {
+    const mix = this.sector.roleMix[kind];
+    if (!mix || this.phase === 'menu') return '';
+    const r = this.weighted(mix);
+    return r ?? '';
+  }
+
+  private weighted<T>(items: Array<[T, number]>): T | null {
+    let total = 0;
+    for (const [, w] of items) total += w;
+    let x = Math.random() * total;
+    for (const [v, w] of items) {
+      x -= w;
+      if (x <= 0) return v;
+    }
+    return items.length ? items[items.length - 1][0] : null;
+  }
+
+  private applyRole(u: Unit, role: Role): void {
+    u.role = role;
+    u.roleT = rand(1.5, 3);
+    if (role === 'shieldBearer') {
+      u.domeMax = Math.round(u.maxHp * 1.2);
+      u.dome = u.domeMax;
+      u.e.shieldR = 105;
+    }
+    u.e.role = role || undefined;
+  }
+
+  private rollAffixes(u: Unit): void {
+    const pool = this.sector.affixes.slice();
+    const n = this.runSector() >= 2 && Math.random() < 0.4 ? 2 : 1;
+    const out: Affix[] = [];
+    for (let i = 0; i < n && pool.length; i++) out.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+    u.affixes = out;
+    u.e.affixes = out;
+    if (out.includes('Shielded')) u.ward = Math.round(u.maxHp * 0.6);
+  }
+
+  private hasAffix(u: Unit, a: Affix): boolean {
+    return u.affixes.length > 0 && u.affixes.includes(a);
+  }
+
+  /** Role behaviour for units past their entry. Returns the intent (or undefined = not handled). */
+  private roleTick(u: Unit, dt: number, playing: boolean): Vec | EnemyIntent | null | undefined {
+    const e = u.e;
+    const hasted = this.hasAffix(u, 'Hasted') ? 1.6 : 1;
+    // sentinels hand back to the station logic when they must relocate
+    if (e.kind === 'sentinel' && u.pt === 0) {
+      u.actT -= dt;
+      if (u.actT <= 0 || this.stallPull || e.x < this.inset + 40 || e.x > this.FW - this.inset - 40) return undefined;
+    }
+    // defend encounters: half the attackers go for the node instead of the player
+    const toNode = this.node.on && u.id % 2 === 0;
+    const px = toNode ? this.node.x : this.px;
+    const py = toNode ? this.node.y : this.py;
+    const dx = px - e.x;
+    const dy = py - e.y;
+    const dp = Math.hypot(dx, dy) || 1;
+    u.roleT -= dt * hasted;
+    switch (u.role) {
+      case 'flanker': {
+        if (e.kind !== 'crawler' && e.kind !== 'fragment') return undefined;
+        if (e.mode !== 0) return null;
+        rolePoint.x = px;
+        rolePoint.y = py;
+        roleIntent.mode = 'surround';
+        roleIntent.radius = 150;
+        roleIntent.angle = u.side < 0 ? -Math.PI * 0.82 : -Math.PI * 0.18;
+        if (playing && u.roleT <= 0 && dp < 200 && e.kind === 'crawler') {
+          crawlerLunge(e);
+          u.roleT = rand(2.2, 3.4);
+        }
+        return roleIntent;
+      }
+      case 'diver': {
+        if (e.kind === 'crawler' && e.mode !== 0) return null;
+        if (playing && dp < 74 && e.kind === 'crawler') crawlerLunge(e);
+        return this.goal(u, px, py, 86 * hasted);
+      }
+      case 'surrounder': {
+        rolePoint.x = px;
+        rolePoint.y = py;
+        roleIntent.mode = 'surround';
+        roleIntent.radius = 175;
+        roleIntent.angle = -Math.PI / 2 + ((u.cidx % 5) - 2) * 0.42 + (u.cluster % 2 ? 0.2 : -0.2);
+        this.swarmShot(u, dt, playing);
+        return roleIntent;
+      }
+      case 'dodger': {
+        if (e.kind !== 'wraith') return undefined;
+        if (u.state === U_STRIKE) return null;
+        // sidestep incoming player fire, else circle above the player
+        let threat = false;
+        for (const b of this.bullets) {
+          if (!b.active || b.y < e.y || b.y - e.y > 140) continue;
+          if (Math.abs(b.x - e.x) < 36) {
+            threat = true;
+            break;
+          }
+        }
+        if (threat && u.roleT <= 0) {
+          u.roleT = 1.1;
+          u.p2y = 0.38;
+        }
+        if (u.p2y > 0) {
+          u.p2y -= dt;
+          roleIntent.mode = 'evade';
+          roleIntent.threatDir = { x: 0, y: -1 };
+          return roleIntent;
+        }
+        roleIntent.threatDir = undefined;
+        rolePoint.x = this.px;
+        rolePoint.y = Math.max(90, this.py - 230);
+        roleIntent.mode = 'orbit';
+        roleIntent.radius = 130;
+        if (playing && u.shotT === -1 && this.visibleForFire(u)) {
+          u.shotT = rand(3, 5);
+          this.queueTell(u, EB_NEEDLE, 3 + this.runSector(), 0.18, this.sector.bulletSpeed * 1.15);
+        }
+        return roleIntent;
+      }
+      case 'mender': {
+        let best: Unit | null = null;
+        let bf = 1;
+        for (const o of this.units) {
+          if (o === u || o.dead || o.state === U_DYING || o.state === U_BOSS || o.delay > 0) continue;
+          const f = o.hp / o.maxHp;
+          if (f >= bf) continue;
+          if ((o.e.x - e.x) ** 2 + (o.e.y - e.y) ** 2 > 280 * 280) continue;
+          bf = f;
+          best = o;
+        }
+        if (best) {
+          e.mendTarget = best.e;
+          best.hp = Math.min(best.maxHp, best.hp + best.maxHp * 0.06 * dt);
+          if (Math.random() < dt * 6) this.particle(P_EMBER, best.e.x, best.e.y, 0, -20, 0.3, 10, C_ORANGE, 0);
+          rolePoint.x = best.e.x;
+          rolePoint.y = best.e.y - 20;
+          roleIntent.mode = 'orbit';
+          roleIntent.radius = 70;
+        } else {
+          e.mendTarget = null;
+          rolePoint.x = this.FW / 2 + Math.sin(u.t * 0.3 + u.id) * 160;
+          rolePoint.y = this.FH * 0.25;
+          roleIntent.mode = 'orbit';
+          roleIntent.radius = 60;
+        }
+        if (e.kind === 'swarm') this.swarmShot(u, dt, playing);
+        return roleIntent;
+      }
+      case 'shieldBearer': {
+        if (u.dome <= 0) {
+          e.role = undefined;
+          if (u.roleT <= 0) {
+            u.dome = u.domeMax;
+            e.role = 'shieldBearer';
+            e.shieldR = 105;
+          }
+        }
+        if (e.kind === 'sentinel') return u.state === U_ACT ? HOLD : undefined;
+        rolePoint.x = this.FW / 2 + Math.sin(u.t * 0.2 + u.id) * this.FW * 0.25;
+        rolePoint.y = this.FH * 0.22;
+        roleIntent.mode = 'orbit';
+        roleIntent.radius = 50;
+        return roleIntent;
+      }
+      case 'suppressor':
+      case 'sniper': {
+        if (e.kind !== 'sentinel' || u.state !== U_ACT) return undefined;
+        const sniper = u.role === 'sniper';
+        if (u.pt === 0 && u.roleT <= 0 && playing && this.visibleForFire(u) && this.onScreen(e, 30)) {
+          u.pt = 1;
+          u.roleT = sniper ? 1.7 : 0.75;
+          u.tellA = Math.atan2(this.py - e.y, this.px - e.x);
+        } else if (u.pt === 1) {
+          // charge: sniper keeps tracking until the last 0.45 s, suppressor locks immediately
+          if (sniper && u.roleT > 0.45) u.tellA = Math.atan2(this.py - e.y, this.px - e.x);
+          if (u.roleT <= 0) {
+            u.pt = 2;
+            u.p2y = 0;
+            u.shotT = 0;
+          }
+        } else if (u.pt === 2) {
+          if (!this.visibleForFire(u)) u.pt = 0;
+          else if (sniper) {
+            this.sniperBeam(u);
+            u.pt = 0;
+            u.roleT = rand(5, 7) / hasted;
+          } else {
+            u.shotT -= dt;
+            if (u.shotT <= 0) {
+              u.shotT = 0.09;
+              const sp = this.sector.bulletSpeed * 1.05;
+              this.ebullet(EB_ORB, e.x + Math.cos(u.tellA) * 20, e.y + Math.sin(u.tellA) * 20, Math.cos(u.tellA) * sp, Math.sin(u.tellA) * sp);
+              this.sfx('enemyShot');
+              u.p2y++;
+              if (u.p2y >= (this.runSector() === 0 ? 4 : 6)) {
+                u.pt = 0;
+                u.roleT = rand(3.5, 5) / hasted;
+              }
+            }
+          }
+        }
+        return HOLD;
+      }
+    }
+    return undefined;
+  }
+
+  private swarmShot(u: Unit, dt: number, playing: boolean): void {
+    if (!playing || this.runSector() === 0) return;
+    u.shotT -= dt;
+    if (u.shotT <= 0 && this.visibleForFire(u)) {
+      u.shotT = rand(3.5, 6) / (1 + 0.3 * this.runSector());
+      this.queueTell(u, EB_PELLET, 2 + this.runSector(), 0.22, this.sector.bulletSpeed * 0.85);
+    }
+  }
+
+  private sniperBeam(u: Unit): void {
+    const e = u.e;
+    const a = u.tellA;
+    const x2 = e.x + Math.cos(a) * 1400;
+    const y2 = e.y + Math.sin(a) * 1400;
+    const b = this.beams.find((x) => !x.active);
+    if (b) {
+      b.active = true;
+      b.x1 = e.x;
+      b.y1 = e.y;
+      b.x2 = x2;
+      b.y2 = y2;
+      b.life = 0.25;
+    }
+    this.sfx('laser');
+    this.addShake(4);
+    // distance from the player to the beam ray
+    const vx = Math.cos(a);
+    const vy = Math.sin(a);
+    const t = (this.px - e.x) * vx + (this.py - e.y) * vy;
+    if (t > 0) {
+      const d = Math.abs((this.px - e.x) * vy - (this.py - e.y) * vx);
+      if (d < 13) this.hurtPlayer(26, this.px, this.py);
+    }
+  }
+
+  /** Damage routed through wards and shield-bearer domes. Returns what reaches hp. */
+  private absorb(u: Unit, dmg: number, x: number, y: number): number {
+    if (u.ward > 0) {
+      const a = Math.min(u.ward, dmg);
+      u.ward -= a;
+      dmg -= a;
+      if (Math.random() < 0.4) this.sparks(x, y, -Math.PI / 2, 1.4, 2, 80, 220, C_WHITE);
+      if (u.ward <= 0) this.particle(P_HEX, u.e.x, u.e.y, 50, 0, 0.3, u.r, C_WHITE, 0);
+      if (dmg <= 0) return 0;
+    }
+    if (u.role === 'shieldBearer' || u.state === U_BOSS) return dmg;
+    for (const b of this.units) {
+      if (b.role !== 'shieldBearer' || b.dome <= 0 || b.dead || b.state === U_DYING) continue;
+      if ((b.e.x - u.e.x) ** 2 + (b.e.y - u.e.y) ** 2 > 105 * 105) continue;
+      b.dome -= dmg;
+      this.sparks(x, y, Math.atan2(y - b.e.y, x - b.e.x), 1.2, 2, 80, 220, C_WHITE);
+      if (b.dome <= 0) {
+        b.dome = 0;
+        b.roleT = 6;
+        b.e.role = undefined;
+        this.particle(P_RING, b.e.x, b.e.y, 120, 0, 0.35, 30, C_WHITE, 0);
+        this.sfx('shieldHit');
+      }
+      return 0;
+    }
+    return dmg;
+  }
+
+  private affixTick(u: Unit, dt: number): void {
+    if (!u.affixes.length) return;
+    const e = u.e;
+    if (this.hasAffix(u, 'Phasing')) {
+      if (u.phaseT > 0) u.phaseT -= dt;
+      else {
+        u.phaseCd -= dt;
+        if (u.phaseCd < 0.45 && Math.random() < 0.5) u.flash = 0.03; // flicker tell
+        if (u.phaseCd <= 0) {
+          u.phaseT = 1.1;
+          u.phaseCd = rand(3.5, 5);
+        }
+      }
+    }
+    if (this.hasAffix(u, 'Vampiric') && (e.x - this.px) ** 2 + (e.y - this.py) ** 2 < 230 * 230) {
+      u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.05 * dt);
+    }
+  }
+
+  private onAffixDeath(u: Unit): void {
+    const e = u.e;
+    if (this.hasAffix(u, 'Splitting') && u.kind !== 'fragment') {
+      for (let k = -1; k <= 1; k += 2) {
+        const kind: EnemyKind = u.kind === 'sentinel' || u.kind === 'swarm' ? 'crawler' : u.kind;
+        const m = this.makeUnit(kind, e.x + k * 16, e.y, false, KIND_STATS[kind].size * 0.75);
+        if (!m) break;
+        m.hp = m.maxHp = Math.max(1, Math.round(u.maxHp * 0.3));
+        m.state = kind === 'leech' || kind === 'crawler' ? U_HUNT : U_ACT;
+        m.from = 'boss';
+        m.side = k;
+        this.applyRole(m, kind === 'crawler' ? 'diver' : '');
+        spawnEnemy(m.e);
+      }
+    }
+    if (this.hasAffix(u, 'Volatile')) {
+      const b = this.blasts.find((x) => !x.active);
+      if (b) {
+        b.active = true;
+        b.x = e.x;
+        b.y = e.y;
+        b.t = 0.7;
+        b.max = 0.7;
+      }
+    }
+  }
+
+  // ================================================================ encounters
+  private pickEncounter(avoid: EncounterId[]): EncounterId {
+    const r = this.run;
+    // the first two waves of the run stay standard so new players can learn
+    if (r && r.sector === 0 && r.waveInSector < 2) return 'standard';
+    const mix = SECTOR_ENCOUNTERS[this.runSector()] ?? SECTOR_ENCOUNTERS[0];
+    const opts = mix.filter(([id]) => !avoid.includes(id) && id !== (r ? r.lastEnc : 'standard'));
+    const rng = r ? r.mapRng : null;
+    let total = 0;
+    for (const [, w] of opts) total += w;
+    let x = (rng ? rng.next() : Math.random()) * total;
+    for (const [id, w] of opts) {
+      x -= w;
+      if (x <= 0) return id;
+    }
+    return opts.length ? opts[0][0] : 'standard';
+  }
+
+  private setupEncounter(id: EncounterId, groups: GroupDef[]): void {
+    const FW = this.FW;
+    const FH = this.FH;
+    this.enc = id;
+    this.inset = 0;
+    this.hazT = 3;
+    for (const w of this.hazWalls) w.active = false;
+    this.scanR = -1;
+    this.scanT = 1;
+    this.pools = [];
+    this.poolT = 0;
+    this.node.on = false;
+    this.huntId = -1;
+    this.encBonus = false;
+    switch (id) {
+      case 'siege':
+        groups.push({ kind: 'sentinel', n: this.runSector() === 0 ? 1 : 2, from: 'top', at: 0, gap: 0.6, role: 'shieldBearer' });
+        groups.push({ kind: 'sentinel', n: this.runSector() === 0 ? 1 : 2, from: 'edges', at: 1.5, gap: 0.6, role: 'suppressor' });
+        break;
+      case 'ambush':
+        for (let i = 0; i < groups.length; i++) {
+          const g = groups[i];
+          if (g.kind !== 'sentinel' && (this.runSector() > 1 || i % 2 === 1)) groups[i] = { ...g, from: 'below' };
+        }
+        break;
+      case 'corrupt':
+        for (let i = 0; i < 3; i++) this.pools.push({ x: rand(70, FW - 70), y: rand(FH * 0.5, FH * 0.9), r: rand(48, 64), a: 0, vx: rand(-12, 12), vy: rand(-8, 8) });
+        this.poolT = 14;
+        break;
+      case 'defend':
+        this.node = { on: true, x: FW / 2, y: FH * 0.5, hp: 100, max: 100, t: DEFEND_TIME };
+        break;
+      case 'hunt':
+        groups.push({ kind: 'swarm', n: 1, from: 'top', at: 0.5, gap: 0 });
+        break;
+    }
+  }
+
+  private encounterTick(dt: number): void {
+    const FW = this.FW;
+    const FH = this.FH;
+    // collapsing firewall: walls + narrowing arena
+    if (this.enc === 'collapse' && this.clearT < 0) {
+      this.inset = Math.min(FW * 0.16, this.inset + dt * 2.4);
+      this.hazT -= dt;
+      if (this.hazT <= 0) {
+        this.hazT = rand(4.5, 6);
+        const w = this.hazWalls.find((x) => !x.active);
+        if (w) {
+          w.active = true;
+          w.y = -10;
+          w.gapW = 110;
+          w.gapX = rand(this.inset + 70, FW - this.inset - 70);
+          w.gapV = (Math.random() < 0.5 ? -1 : 1) * rand(40, 70);
+          w.hit = false;
+          this.sfx('laser');
+        }
+      }
+    }
+    for (const w of this.hazWalls) {
+      if (!w.active) continue;
+      w.y += 95 * dt;
+      w.gapX += w.gapV * dt;
+      if (w.gapX < this.inset + 60 || w.gapX > FW - this.inset - 60) w.gapV = -w.gapV;
+      if (!w.hit && Math.abs(this.py - w.y) < 8 && Math.abs(this.px - w.gapX) > w.gapW / 2) {
+        w.hit = true;
+        this.hurtPlayer(14, this.px, w.y);
+      }
+      if (w.y > FH + 20) w.active = false;
+    }
+    if (this.inset > 0 && (this.px < this.inset || this.px > FW - this.inset)) this.drain(dt * 10);
+    // blackout scan pulse
+    if (this.enc === 'blackout') {
+      this.scanT -= dt;
+      if (this.scanT <= 0) {
+        this.scanT = 3.2;
+        this.scanR = 10;
+        this.sfx('empReady');
+      }
+      if (this.scanR >= 0) {
+        this.scanR += 520 * dt;
+        if (this.scanR > Math.max(FW, FH) * 1.3) this.scanR = -1;
+      }
+    }
+    // corrupted pools: drift, relocate with a fade-in telegraph
+    this.slowed = false;
+    if (this.pools.length) {
+      this.poolT -= dt;
+      for (const pl of this.pools) {
+        pl.a = Math.min(1, pl.a + dt / 1.5);
+        pl.x = clamp(pl.x + pl.vx * dt, 50, FW - 50);
+        pl.y = clamp(pl.y + pl.vy * dt, FH * 0.45, FH - 40);
+        if (pl.a >= 1 && (this.px - pl.x) ** 2 + (this.py - pl.y) ** 2 < pl.r * pl.r) {
+          this.slowed = true;
+          this.drain(dt * 5);
+        }
+      }
+      if (this.poolT <= 0) {
+        this.poolT = 14;
+        const pl = this.pools[(Math.random() * this.pools.length) | 0];
+        pl.x = rand(70, FW - 70);
+        pl.y = rand(FH * 0.5, FH * 0.9);
+        pl.a = 0;
+      }
+    }
+    // defend the node
+    const n = this.node;
+    if (n.on && this.clearT < 0) {
+      n.t -= dt;
+      for (const u of this.units) {
+        if (!this.tangible(u) || u.state === U_BOSS) continue;
+        if ((u.e.x - n.x) ** 2 + (u.e.y - n.y) ** 2 < (u.r + 26) ** 2) {
+          n.hp -= u.contact * 0.8;
+          this.killUnit(u, false);
+        }
+      }
+      for (const b of this.ebullets) {
+        if (b.active && (b.x - n.x) ** 2 + (b.y - n.y) ** 2 < 22 * 22) {
+          b.active = false;
+          n.hp -= 4;
+        }
+      }
+      if (n.hp <= 0) {
+        n.on = false;
+        this.hp = Math.max(1, this.hp - 30 * this.sector.dmgMul);
+        this.damageFlash = 1;
+        this.say('NODE LOST', 'FEEDBACK SURGE // -INTEGRITY', true, 2);
+        this.sfx('damage');
+      } else if (n.t <= 0) {
+        n.on = false;
+        this.encBonus = true;
+        this.groupIdx = this.groups.length;
+        for (const u of this.units) if (!u.dead && u.state !== U_DYING) this.killUnit(u, false);
+        this.say('NODE SECURED', 'BONUS MODULE UNLOCKED', false, 2);
+        this.sfx('clear');
+      }
+    }
+    // hunt: the summoner flees, summons, escapes
+    if (this.huntId >= 0) {
+      const h = this.units.find((x) => x.id === this.huntId);
+      if (!h || h.dead || h.state === U_DYING) this.huntId = -1;
+      else {
+        this.huntT -= dt;
+        h.roleT -= dt;
+        if (h.roleT < 0.5 && h.roleT + dt >= 0.5) this.particle(P_RING, h.e.x, h.e.y, 60, 0, 0.5, 20, C_RED, 0); // summon tell
+        if (h.roleT <= 0) {
+          h.roleT = 5;
+          for (let k = 0; k < 2; k++) this.spawnGroup({ kind: 'crawler', n: 1, from: 'boss', at: 0, gap: 0, role: 'diver' }, false, h.e.x, h.e.y);
+        }
+        if (this.huntT <= 0 && h.e.y < -30) {
+          h.dead = true;
+          this.huntId = -1;
+          this.say('TARGET ESCAPED', 'NO BONUS', true, 1.6);
+        }
+      }
+    }
+  }
+
+  /** Hunt target behaviour: keep away from the player, then escape upward. */
+  private huntIntent(u: Unit): Vec {
+    if (this.huntT <= 0) return this.goal(u, u.e.x, -80, 90);
+    const away = u.e.x < this.px ? -1 : 1;
+    const gx = clamp(u.e.x + away * 120, 60, this.FW - 60);
+    return this.goal(u, gx, 90 + Math.sin(u.t * 0.8) * 40, 70);
   }
 
   private tangible(u: Unit): boolean {
@@ -1146,6 +1765,7 @@ export class Game implements BossHost {
     const e = u.e;
     if (!e.alive) return false;
     if (e.kind === 'wraith' && e.vis < 0.45) return false;
+    if (u.phaseT > 0) return false;
     if (u.state === U_BOSS && this.bc && !this.bc.tangible) return false;
     return e.x > -12 && e.x < this.FW + 12 && e.y > -12 && e.y < this.FH + 12;
   }
@@ -1184,8 +1804,15 @@ export class Game implements BossHost {
     const idx = Math.min(sec.waves.length - 1, r.waveInSector);
     const cnt = sec.countMul * (1 + (0.03 + 0.06 * r.sector) * idx) * (this.hard ? 1.2 : 1);
     const pace = (1 - 0.06 * idx) * (this.hard ? 0.85 : 1);
-    const groups = sec.waves[idx].groups.map((x) => ({ ...x, n: Math.max(1, Math.round(x.n * cnt)), at: x.at * pace }));
+    const enc = r.pendingEnc;
+    r.pendingEnc = 'standard';
+    r.lastEnc = enc;
+    const ed = ENCOUNTERS[enc];
+    this.encHp = ed.hpMul;
+    const encCount = r.sector === 0 ? 1 + (ed.countMul - 1) * 0.55 : ed.countMul;
+    const groups: GroupDef[] = sec.waves[idx].groups.map((x) => ({ ...x, n: Math.max(1, Math.round(x.n * cnt * (x.role ? 1 : encCount))), at: x.at * pace }));
     if (elite) for (const g of sec.eliteExtra) groups.push({ ...g, n: Math.round(g.n * cnt) + 1 });
+    this.setupEncounter(enc, groups);
     groups.sort((a, b) => a.at - b.at);
     this.groups = groups;
     this.groupIdx = 0;
@@ -1208,7 +1835,8 @@ export class Game implements BossHost {
       this.say(FLAVOR.wave[(Math.random() * FLAVOR.wave.length) | 0], label, false, 2.2);
       this.sfx('wave');
     }
-    this.pushLog(`${elite ? 'elite ' : ''}intrusion: ${this.waveTotal} processes`);
+    if (enc !== 'standard') this.say(ed.name, ed.rule.toUpperCase(), enc === 'ambush' || enc === 'hunt', 3);
+    this.pushLog(`${elite ? 'elite ' : ''}${ed.name.toLowerCase()}: ${this.waveTotal} processes`);
     this.setPhase('playing');
   }
 
@@ -1253,15 +1881,27 @@ export class Game implements BossHost {
       if (e.kind === 'sentinel' && e.mode === 0) e.dur = 1e9;
       if (e.kind === 'wraith' && e.mode === 0 && u.state !== U_STRIKE) e.modeT = 0;
 
-      let intent: Vec | null = null;
+      let intent: Vec | EnemyIntent | null = null;
       const dxp = this.px - e.x;
       const dyp = this.py - e.y;
       const dp = Math.hypot(dxp, dyp) || 1;
-      switch (e.kind) {
+      this.affixTick(u, dt);
+      let handled = false;
+      if (u.hunted) {
+        intent = this.huntIntent(u);
+        handled = true;
+      } else if (u.role && (u.state === U_ACT || u.state === U_HUNT)) {
+        const ri = this.roleTick(u, dt, playing);
+        if (ri !== undefined) {
+          intent = ri;
+          handled = true;
+        }
+      }
+      if (!handled) switch (e.kind) {
         case 'crawler': {
           if (u.state === U_ENTER) {
             intent = this.goal(u, u.gx, u.gy, 80);
-            if (this.onScreen(e, 16) && (Math.hypot(u.gx - e.x, u.gy - e.y) < 30 || u.stateT > 7)) {
+            if (this.onScreen(e, 16) && (u.role === 'diver' || u.role === 'flanker' || Math.hypot(u.gx - e.x, u.gy - e.y) < 30 || u.stateT > 7)) {
               u.state = U_ACT;
               u.stateT = 0;
               u.baseX = e.x;
@@ -1324,8 +1964,11 @@ export class Game implements BossHost {
             u.gy = Math.min(u.gy, FH * 0.38);
           } else {
             u.actT -= dt;
+            const edge = this.inset + 40;
+            if ((e.x < edge || e.x > FW - edge || this.stallPull) && e.mode === 0) u.actT = 0;
             if (u.actT <= 0 && e.mode === 0) {
-              u.gx = clamp(e.x + rand(-140, 140), 44, FW - 44);
+              if (this.stallPull) u.gx = rand(FW * 0.3, FW * 0.7);
+              u.gx = clamp(this.stallPull ? u.gx : e.x + rand(-140, 140), Math.max(44, edge), Math.min(FW - 44, FW - edge));
               u.gy = clamp(e.y + rand(-50, 50), 70, FH * 0.38);
               u.state = U_ENTER;
               u.stateT = 0;
@@ -1549,6 +2192,15 @@ export class Game implements BossHost {
       dead: false,
       life: 6,
       belowT: 0,
+      role: '',
+      roleT: 2,
+      dome: 0,
+      domeMax: 0,
+      affixes: [],
+      ward: 0,
+      phaseT: 0,
+      phaseCd: 3,
+      hunted: false,
     };
   }
 
@@ -1568,14 +2220,26 @@ export class Game implements BossHost {
         const due = this.waveClock >= g.at || alive <= 2;
         if (!due || alive >= sec.maxAlive) break;
         if (this.waveClock < g.at) this.waveClock = g.at;
-        alive += this.spawnGroup(g, this.waveElite);
+        const made = this.spawnGroup(g, this.waveElite);
+        alive += made;
+        if (this.enc === 'hunt' && this.huntId < 0 && g.kind === 'swarm' && g.n === 1 && made) {
+          const h = this.units[this.units.length - 1];
+          h.hunted = true;
+          h.elite = true;
+          h.hp = h.maxHp = Math.round(h.maxHp * 3);
+          h.role = '';
+          h.e.role = undefined;
+          h.roleT = 3;
+          this.huntId = h.id;
+          this.huntT = HUNT_ESCAPE;
+        }
         this.groupIdx++;
       }
     }
     // sentinel volleys: one at a time, only from fully visible stations
     this.fireDirT -= dt;
     if (this.fireDirT <= 0) {
-      const sents = this.units.filter((u) => u.e.kind === 'sentinel' && u.state === U_ACT && u.e.mode === 0 && this.visibleForFire(u) && this.onScreen(u.e, 30));
+      const sents = this.units.filter((u) => u.e.kind === 'sentinel' && (u.role === '' || u.role === 'shieldBearer') && u.state === U_ACT && u.e.mode === 0 && this.visibleForFire(u) && this.onScreen(u.e, 30));
       const waveK = 1 - 0.06 * (this.run ? Math.min(5, this.run.waveInSector) : 0);
       this.fireDirT = sec.fireGap * waveK * rand(0.7, 1.3) * (sents.length > 3 ? 0.75 : 1) * (this.isBoss ? 1.6 : 1) * (this.hard ? 0.8 : 1);
       if (sents.length) {
@@ -1715,6 +2379,11 @@ export class Game implements BossHost {
         return;
       }
     }
+    dmg = this.absorb(u, dmg, x, y);
+    if (dmg <= 0) {
+      u.flash = 0.03;
+      return;
+    }
     u.hp -= dmg;
     u.flash = 0.08;
     hurtEnemy(u.e, dx, dy, clamp((dmg / u.maxHp) * 3, 0.3, 1));
@@ -1768,6 +2437,12 @@ export class Game implements BossHost {
       return;
     }
     if (u.state === U_DECOY && this.bc) this.bc.explodeDecoy(u);
+    if (byPlayer) this.onAffixDeath(u);
+    if (u.hunted && byPlayer) {
+      this.encBonus = true;
+      this.score += 2000;
+      this.say('TARGET PURGED', '+2000 // BONUS MODULE', false, 2);
+    }
     // death animation (swarm nodes split into fragments); unit stays until e.done
     u.state = U_DYING;
     u.tellT = 0;
@@ -2060,6 +2735,8 @@ export class Game implements BossHost {
     this.director(dt);
     this.updateUnits(dt);
     this.updatePulse(dt);
+    this.encounterTick(dt);
+    this.updateBlasts(dt);
     this.updateBullets(dt);
     this.updateEBullets(dt);
     this.collidePlayer();
@@ -2081,7 +2758,7 @@ export class Game implements BossHost {
 
     // wave completion
     if (this.waveActive && this.clearT < 0) {
-      if (this.countAlive() === 0 && this.groupIdx >= this.groups.length) {
+      if (this.countAlive() === 0 && this.groupIdx >= this.groups.length && !this.node.on) {
         this.clearT = this.isBoss ? 2.4 : 1.6;
         if (!this.isBoss) {
           const sec = r ? r.sector : 0;
@@ -2089,6 +2766,8 @@ export class Game implements BossHost {
           const nohit = this.hitThisWave ? 0 : 1000 * (sec + 1);
           const route = this.fightBonus ? 1500 : 0;
           this.score += bonus + nohit + route;
+          // sector 1 only: a small patch after each wave
+          if (sec === 0) this.hp = Math.min(this.stats.maxHp, this.hp + this.stats.maxHp * 0.12);
           const fl = FLAVOR.clear[(Math.random() * FLAVOR.clear.length) | 0];
           this.say(fl, `+${bonus + route}${nohit ? `  //  FLAWLESS +${nohit}` : ''}`, false, 2);
           this.sfx('clear');
@@ -2118,7 +2797,7 @@ export class Game implements BossHost {
     } else {
       r.waveInSector++;
       r.afterPick = 'routes';
-      this.openOffer(this.waveElite ? 'elite' : 'wave');
+      this.openOffer(this.waveElite || this.encBonus ? 'elite' : 'wave');
     }
   }
 
@@ -2143,7 +2822,7 @@ export class Game implements BossHost {
   private updatePlayer(dt: number): void {
     const st = this.stats;
     const over = this.buffOver > 0 || st.permOverclock;
-    const speed = st.moveSpeed * (over ? 1.12 : 1);
+    const speed = st.moveSpeed * (over ? 1.12 : 1) * (this.slowed ? 0.55 : 1);
     const minY = this.FH * (1 - PLAYER_ZONE);
     const maxY = this.FH - 40;
     let tvx = 0;
@@ -2469,6 +3148,27 @@ export class Game implements BossHost {
         if (this.inv > 0 || this.dashT > 0) continue;
         b.active = false;
         this.hurtPlayer(b.kind === EB_ORB ? 12 : 9, b.x, b.y);
+      }
+    }
+  }
+
+  private updateBlasts(dt: number): void {
+    for (const b of this.beams) if (b.active && (b.life -= dt) <= 0) b.active = false;
+    for (const b of this.blasts) {
+      if (!b.active) continue;
+      b.t -= dt;
+      if (b.t <= 0) {
+        b.active = false;
+        // volatile detonation
+        this.particle(P_RING, b.x, b.y, 85, 0, 0.35, 10, C_RED, 0);
+        this.particle(P_EMBER, b.x, b.y, 0, 0, 0.35, 120, C_RED, 0);
+        this.addShake(6);
+        this.sfx('bigDeath');
+        if ((this.px - b.x) ** 2 + (this.py - b.y) ** 2 < 85 * 85) this.hurtPlayer(18, b.x, b.y);
+        for (let i = 0; i < 10; i++) {
+          const a = (i / 10) * TAU;
+          this.ebullet(EB_PELLET, b.x, b.y, Math.cos(a) * 150, Math.sin(a) * 150);
+        }
       }
     }
   }

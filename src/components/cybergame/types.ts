@@ -166,7 +166,11 @@ export const U_DYING = 8; // death animation playing (killEnemy), until e.done
 export const U_BOSS = 9;
 export const U_DECOY = 10; // boss clone: explodes when shot
 
-export type SpawnFrom = 'top' | 'walls' | 'corners' | 'edges' | 'sides' | 'phase' | 'swoop' | 'cluster' | 'boss';
+export type SpawnFrom = 'top' | 'walls' | 'corners' | 'edges' | 'sides' | 'phase' | 'swoop' | 'cluster' | 'boss' | 'pincer' | 'below';
+
+/** Director roles (drive intent modes and role mechanics). */
+export type Role = '' | 'flanker' | 'suppressor' | 'shieldBearer' | 'mender' | 'diver' | 'sniper' | 'dodger' | 'surrounder';
+export type Affix = 'Shielded' | 'Splitting' | 'Phasing' | 'Vampiric' | 'Hasted' | 'Volatile';
 
 /** Game-side wrapper around a library enemy. Movement is intent-only. */
 export interface Unit {
@@ -217,6 +221,19 @@ export interface Unit {
   life: number;
   /** seconds spent beside / below the player */
   belowT: number;
+  role: Role;
+  /** role timer (charge, fire, mend ticks) */
+  roleT: number;
+  /** shieldBearer dome hit points / max */
+  dome: number;
+  domeMax: number;
+  affixes: Affix[];
+  /** Shielded affix: absorbs damage first */
+  ward: number;
+  /** Phasing affix: >0 while phased out (intangible) */
+  phaseT: number;
+  phaseCd: number;
+  hunted: boolean;
 }
 
 export const MAX_UNITS = 72;
